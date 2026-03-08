@@ -1,0 +1,36 @@
+# Unreal Engine
+Binaries/
+Build/
+DerivedDataCache/
+Intermediate/
+Saved/
+.vs/
+.vscode/
+*.VC.db
+*.opensdf
+*.opendb
+*.sdf
+*.sln
+*.suo
+*.xcworkspace
+*.xcodeproj
+CrashReportClient/
+**/__ExternalObject__/
+
+# UE compiled assets (regenerated from source)
+*.uasset linguist-generated
+*.umap linguist-generated
+
+# Blackmagic / DeckLink SDK (if added locally)
+Plugins/Blackmagic/Binaries/
+Plugins/Blackmagic/Intermediate/
+
+# Cesium for Unreal (large plugin — install from Marketplace, don't commit)
+Plugins/CesiumForUnreal/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Large binary test data — track with Git LFS instead
+# Content/Data/*.csv  ← uncomment if CSV files are large
