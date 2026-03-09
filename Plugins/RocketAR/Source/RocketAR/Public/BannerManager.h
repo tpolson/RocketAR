@@ -45,6 +45,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Banner Manager")
 	int32 GetActiveBannerCount() const { return ActiveBanners.Num(); }
 
+
 	// Configuration
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config")
 	float BannerArcAngle = 120.0f;

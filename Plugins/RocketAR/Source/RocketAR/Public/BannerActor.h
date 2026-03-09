@@ -74,14 +74,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
 	float FadeOutDuration = 1.0f;
 
-	/** Additional rotation offset applied after camera-facing (degrees) */
+	/** Additional rotation offset applied after trajectory alignment (degrees) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
 	FRotator BannerRotationOffset = FRotator::ZeroRotator;
+
+	/** Set rotation so face normal aligns with trajectory vector (call once at spawn) */
+	void SetTrajectoryRotation(const FVector& Trajectory);
 
 protected:
 	void UpdateSpawnAnimation(float DeltaTime);
 	void UpdateFadeOut(float DeltaTime);
-	void UpdateCameraFacing();
 	void RenderTextToTarget();
 
 	UPROPERTY()

@@ -64,9 +64,11 @@ public:
 
 	double SpawnTime = 0.0;
 
+	/** Set rotation so face normal aligns with trajectory vector, then locks */
+	void SetTrajectoryRotation(const FVector& TrajectoryVector);
+
 protected:
 	void RenderTextToTarget();
-	void UpdateCameraFacing();
 
 	UPROPERTY()
 	UProceduralMeshComponent* MeshComponent = nullptr;
@@ -85,4 +87,5 @@ protected:
 	bool bFading = false;
 	float FadeAlpha = 1.0f;
 	bool bInitialized = false;
+	bool bRotationLocked = false;
 };

@@ -238,6 +238,7 @@ private:
 	/** Cached from last telemetry update for event disk and banner placement */
 	FVector LastVehicleUEPosition = FVector::ZeroVector;
 	FVector LastVehicleUEVelocity = FVector::ZeroVector;
+	FVector PrevUEPosition = FVector::ZeroVector;
 	FQuat LastVehicleUERotation = FQuat::Identity;
 	double LastAltitudeASL = 0.0;
 	double LastVerticalVelocity = 0.0;

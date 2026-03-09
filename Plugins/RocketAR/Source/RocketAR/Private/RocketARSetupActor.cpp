@@ -282,6 +282,30 @@ void ARocketARSetupActor::SetupFreezeFrame()
 		if (TestBanner)
 		{
 			TestBanner->BannerRotationOffset = BannerRotationOffset;
+			TestBanner->SetTrajectoryRotation(FVector(0, 0, 1)); // Straight up for freeze frame
+		}
+	}
+
+	// Spawn a test altitude marker below the rocket
+	if (bShowAltitudeMarkers)
+	{
+		const FVector MarkerPos = RocketUEPos - FVector(0.0, 0.0, 500000.0); // 5km below
+		const double MarkerAlt = FreezeFrameAltitude - 5000.0;
+		FString MarkerLabel = FString::Printf(TEXT("%.0f km"), MarkerAlt / 1000.0);
+
+		FActorSpawnParameters MarkerSpawnParams;
+		MarkerSpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		AAltitudeMarkerActor* TestMarker = GetWorld()->SpawnActor<AAltitudeMarkerActor>(
+			AAltitudeMarkerActor::StaticClass(), MarkerPos, FRotator::ZeroRotator, MarkerSpawnParams);
+		if (TestMarker)
+		{
+			TestMarker->InitMarker(MarkerLabel, MarkerAlt,
+				MarkerArcAngle, MarkerArcRadius, MarkerArcHeight, 32,
+				MarkerMaterial, MarkerFont);
+			TestMarker->LifetimeSeconds = 0.0f;
+			TestMarker->MarkerRotationOffset = MarkerRotationOffset;
+			TestMarker->SetTrajectoryRotation(FVector(0, 0, 1)); // Straight up
+			PrePlacedAltitudeMarkers.Add(MarkerAlt, TestMarker);
 		}
 	}
 
@@ -357,21 +381,28 @@ void ARocketARSetupActor::OnTelemetryUpdated(const FProcessedTelemetryData& Data
 	LastAltitudeASL = Data.AltitudeASL;
 	LastVerticalVelocity = Data.VerticalVelocity;
 
-	// Convert ECEF velocity to UE space for predictive banner placement
-	// Transform (pos + vel) to UE, subtract transformed pos — gives UE velocity vector
+	// Convert ECEF velocity to UE space for predictive banner/marker placement
 	const FVector ECEFPos = Data.RawData.VehiclePosition;
 	const FVector ECEFVel = Data.RawData.VehicleVelocity;
+	bool bVelocitySet = false;
 #if WITH_CESIUM
 	if (Georeference && !ECEFVel.IsNearlyZero())
 	{
 		const FVector PosAheadUE = Georeference->TransformEarthCenteredEarthFixedPositionToUnreal(ECEFPos + ECEFVel);
 		LastVehicleUEVelocity = PosAheadUE - Data.UEPosition; // UE units per second (cm/s)
+		bVelocitySet = true;
 	}
-	else
 #endif
+	// Fallback: derive UE velocity from position deltas
+	if (!bVelocitySet)
 	{
-		LastVehicleUEVelocity = FVector::ZeroVector;
+		if (!PrevUEPosition.IsZero())
+		{
+			const float DT = FMath::Max(GetWorld()->GetDeltaSeconds(), 0.001f);
+			LastVehicleUEVelocity = (Data.UEPosition - PrevUEPosition) / DT;
+		}
 	}
+	PrevUEPosition = Data.UEPosition;
 
 	// Update pre-placed altitude banners along current trajectory
 	UpdatePrePlacedBanners();
@@ -461,8 +492,13 @@ void ARocketARSetupActor::Tick(float DeltaTime)
 	if (bFreezeFrameMode &&
 		(FreezeFrameAltitude != FreezeFrameAltitudeLast || FreezeFrameEventLabel != FreezeFrameEventLabelLast))
 	{
-		// Clear old test banners and disks
+		// Clear old test banners, markers, and disks
 		if (BannerManager) BannerManager->DestroyAllBanners();
+		for (auto& Pair : PrePlacedAltitudeMarkers)
+		{
+			if (Pair.Value && IsValid(Pair.Value)) Pair.Value->ForceDestroy();
+		}
+		PrePlacedAltitudeMarkers.Empty();
 		if (DevVisActor) DevVisActor->ClearEventDisks();
 
 		SetupFreezeFrame();
@@ -560,6 +596,7 @@ void ARocketARSetupActor::OnFlightEventDetected(const FFlightEventData& EventDat
 			if (Banner)
 			{
 				Banner->BannerRotationOffset = BannerRotationOffset;
+				Banner->SetTrajectoryRotation(LastVehicleUEVelocity);
 			}
 		}
 	}
@@ -596,16 +633,16 @@ void ARocketARSetupActor::UpdatePrePlacedBanners()
 		const double MarkerAlt = NextMarkerBase + i * Interval;
 		if (MarkerAlt <= 0.0) continue;
 
-		// Already have a marker for this altitude?
+		// Already have a marker for this altitude — continuously update position and rotation
 		if (PrePlacedAltitudeMarkers.Contains(MarkerAlt))
 		{
-			// Update its position along current trajectory
 			AAltitudeMarkerActor* Existing = PrePlacedAltitudeMarkers[MarkerAlt];
 			if (Existing && IsValid(Existing))
 			{
 				const double TimeToReach = (MarkerAlt - LastAltitudeASL) / FMath::Max(LastVerticalVelocity, 1.0);
 				const FVector PredictedPos = LastVehicleUEPosition + LastVehicleUEVelocity * TimeToReach;
 				Existing->SetActorLocation(PredictedPos);
+				Existing->SetTrajectoryRotation(LastVehicleUEVelocity);
 			}
 			continue;
 		}
@@ -641,6 +678,8 @@ void ARocketARSetupActor::UpdatePrePlacedBanners()
 				MarkerMaterial, MarkerFont);
 			Marker->LifetimeSeconds = 0.0f; // We manage lifecycle, not auto-fade
 			Marker->MarkerRotationOffset = MarkerRotationOffset;
+			Marker->SetTrajectoryRotation(LastVehicleUEVelocity);
+
 			PrePlacedAltitudeMarkers.Add(MarkerAlt, Marker);
 
 			UE_LOG(LogRocketAR, Log, TEXT("Pre-placed altitude marker: %s at predicted pos (%.0f, %.0f, %.0f) T=%.1fs ahead"),
@@ -648,20 +687,17 @@ void ARocketARSetupActor::UpdatePrePlacedBanners()
 		}
 	}
 
-	// Clean up markers we've passed (below current altitude minus some margin)
-	TArray<double> ToRemove;
+	// Lock markers the rocket has passed — stop updating, remove from tracking
+	// The marker actor stays in place at its last predicted position/rotation
+	TArray<double> ToLock;
 	for (auto& Pair : PrePlacedAltitudeMarkers)
 	{
-		if (Pair.Key < LastAltitudeASL - Interval)
+		if (Pair.Key <= LastAltitudeASL)
 		{
-			if (Pair.Value && IsValid(Pair.Value))
-			{
-				Pair.Value->StartFadeOut();
-			}
-			ToRemove.Add(Pair.Key);
+			ToLock.Add(Pair.Key);
 		}
 	}
-	for (double Alt : ToRemove)
+	for (double Alt : ToLock)
 	{
 		PrePlacedAltitudeMarkers.Remove(Alt);
 	}

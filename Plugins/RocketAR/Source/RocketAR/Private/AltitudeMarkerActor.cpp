@@ -153,26 +153,19 @@ void AAltitudeMarkerActor::Tick(float DeltaTime)
 		}
 	}
 
-	UpdateCameraFacing();
+	// Rotation set once at spawn via SetTrajectoryRotation — no per-frame update
 }
 
-void AAltitudeMarkerActor::UpdateCameraFacing()
+void AAltitudeMarkerActor::SetTrajectoryRotation(const FVector& TrajectoryVector)
 {
-	APlayerCameraManager* CamMgr = UGameplayStatics::GetPlayerCameraManager(this, 0);
-	if (!CamMgr) return;
+	if (TrajectoryVector.IsNearlyZero()) return;
 
-	const FVector CamPos = CamMgr->GetCameraLocation();
-	const FVector MarkerPos = GetActorLocation();
-	const FVector ToCamera = CamPos - MarkerPos;
-
-	if (ToCamera.SizeSquared() > 1.0f)
-	{
-		const FRotator FullLook = ToCamera.Rotation();
-		// Only use yaw; zero pitch/roll keeps marker upright
-		FRotator LookRot(0.0f, FullLook.Yaw, 0.0f);
-		LookRot += MarkerRotationOffset;
-		SetActorRotation(LookRot);
-	}
+	// Arc face normal is local -Y. Align -Y with trajectory vector.
+	// Yaw = trajectory_yaw - 90° achieves this.
+	const FRotator TrajRot = TrajectoryVector.Rotation();
+	FRotator FinalRot(0.0f, TrajRot.Yaw - 90.0f, 0.0f);
+	FinalRot += MarkerRotationOffset;
+	SetActorRotation(FinalRot);
 }
 
 void AAltitudeMarkerActor::StartFadeOut()
