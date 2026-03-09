@@ -278,7 +278,11 @@ void ARocketARSetupActor::SetupFreezeFrame()
 
 	if (BannerManager)
 	{
-		BannerManager->SpawnBanner(TestEvent);
+		ABannerActor* TestBanner = BannerManager->SpawnBanner(TestEvent);
+		if (TestBanner)
+		{
+			TestBanner->BannerRotationOffset = BannerRotationOffset;
+		}
 	}
 
 	// Also fire the event disk if enabled
@@ -326,8 +330,8 @@ void ARocketARSetupActor::WireSubsystems()
 		UE_LOG(LogRocketAR, Error, TEXT("TelemetrySubsystem not found!"));
 	}
 
-	// Wire banner manager to event detector
-	if (BannerManager && EventDetector)
+	// Configure banner manager (setup actor handles event→banner spawning, not BannerManager directly)
+	if (BannerManager)
 	{
 		BannerManager->BannerArcRadius = BannerArcRadius;
 		BannerManager->BannerArcAngle = BannerArcAngle;
@@ -336,11 +340,9 @@ void ARocketARSetupActor::WireSubsystems()
 		BannerManager->MaxActiveBanners = MaxActiveBanners;
 		BannerManager->BannerMaterial = BannerMaterial;
 		BannerManager->BannerFont = BannerFont;
-
-		BannerManager->SetEventDetector(EventDetector);
 	}
 
-	// Wire event detector to dev visualization for disk markers
+	// Wire event detector — setup actor is sole handler for event→banner/disk/HUD
 	if (EventDetector)
 	{
 		EventDetector->OnFlightEvent.AddDynamic(this, &ARocketARSetupActor::OnFlightEventDetected);
@@ -352,15 +354,24 @@ void ARocketARSetupActor::OnTelemetryUpdated(const FProcessedTelemetryData& Data
 	// Cache vehicle transform for event disk placement
 	LastVehicleUEPosition = Data.UEPosition;
 	LastVehicleUERotation = Data.UERotation;
-
-	// Cache UE-space velocity for predictive banner placement
-	if (!PrevUEPosition.IsZero())
-	{
-		LastVehicleUEVelocity = (Data.UEPosition - PrevUEPosition) / FMath::Max(GetWorld()->GetDeltaSeconds(), 0.001f);
-	}
-	PrevUEPosition = Data.UEPosition;
 	LastAltitudeASL = Data.AltitudeASL;
 	LastVerticalVelocity = Data.VerticalVelocity;
+
+	// Convert ECEF velocity to UE space for predictive banner placement
+	// Transform (pos + vel) to UE, subtract transformed pos — gives UE velocity vector
+	const FVector ECEFPos = Data.RawData.VehiclePosition;
+	const FVector ECEFVel = Data.RawData.VehicleVelocity;
+#if WITH_CESIUM
+	if (Georeference && !ECEFVel.IsNearlyZero())
+	{
+		const FVector PosAheadUE = Georeference->TransformEarthCenteredEarthFixedPositionToUnreal(ECEFPos + ECEFVel);
+		LastVehicleUEVelocity = PosAheadUE - Data.UEPosition; // UE units per second (cm/s)
+	}
+	else
+#endif
+	{
+		LastVehicleUEVelocity = FVector::ZeroVector;
+	}
 
 	// Update pre-placed altitude banners along current trajectory
 	UpdatePrePlacedBanners();
@@ -425,6 +436,18 @@ void ARocketARSetupActor::Tick(float DeltaTime)
 		CameraManager->CameraMountRotation = CameraMountRotation;
 		CameraManager->CameraOpticalRoll = CameraOpticalRoll;
 		CameraManager->CameraHFOV = CameraHFOV;
+	}
+
+	// Live-sync banner config so new banners use current values
+	if (BannerManager)
+	{
+		BannerManager->BannerArcRadius = BannerArcRadius;
+		BannerManager->BannerArcAngle = BannerArcAngle;
+		BannerManager->BannerArcHeight = BannerArcHeight;
+		BannerManager->BannerLifetimeSeconds = BannerLifetimeSeconds;
+		BannerManager->MaxActiveBanners = MaxActiveBanners;
+		BannerManager->BannerMaterial = BannerMaterial;
+		BannerManager->BannerFont = BannerFont;
 	}
 
 	// Toggle dev visualization when the bool changes
@@ -508,34 +531,37 @@ int32 ARocketARSetupActor::GetProviderPriority_Implementation() const
 
 void ARocketARSetupActor::OnFlightEventDetected(const FFlightEventData& EventData)
 {
+	// Skip altitude markers entirely when disabled
+	if (EventData.EventType == EFlightEvent::AltitudeMarker && !bShowAltitudeMarkers)
+	{
+		return;
+	}
+
 	UE_LOG(LogRocketAR, Log, TEXT("Flight event: %s at MET=%.1f, Alt=%.0fm"),
 		*EventData.EventLabel, EventData.MET, EventData.Altitude);
 
-	// Altitude markers are pre-placed — don't spawn again
+	// Spawn banner at predicted position (velocity * lead time ahead of current position)
 	if (EventData.EventType != EFlightEvent::AltitudeMarker)
 	{
-		// Dynamic events: predict position ahead
-		const FVector PredictedPosition = LastVehicleUEPosition + LastVehicleUEVelocity * BannerLeadTimeSeconds;
+		FVector SpawnPosition = LastVehicleUEPosition;
+		if (BannerLeadTimeSeconds > 0.0f && !LastVehicleUEVelocity.IsNearlyZero())
+		{
+			SpawnPosition = LastVehicleUEPosition + LastVehicleUEVelocity * BannerLeadTimeSeconds;
+		}
 
 		if (DevVisActor && bDevVisualization && bShowEventDisks)
 		{
-			DevVisActor->SpawnEventDisk(PredictedPosition, LastVehicleUERotation, EventData.EventLabel);
+			DevVisActor->SpawnEventDisk(SpawnPosition, LastVehicleUERotation, EventData.EventLabel);
 		}
 
-		// Spawn banner at predicted position for dynamic events
 		if (BannerManager)
 		{
-			ABannerActor* Banner = BannerManager->SpawnBannerAtPosition(EventData, PredictedPosition);
+			ABannerActor* Banner = BannerManager->SpawnBannerAtPosition(EventData, SpawnPosition);
 			if (Banner)
 			{
 				Banner->BannerRotationOffset = BannerRotationOffset;
 			}
 		}
-	}
-	else if (DevVisActor && bDevVisualization && bShowEventDisks)
-	{
-		// Altitude marker disk at current position (banner already pre-placed)
-		DevVisActor->SpawnEventDisk(LastVehicleUEPosition, LastVehicleUERotation, EventData.EventLabel);
 	}
 
 	// Show event on HUD overlay

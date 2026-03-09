@@ -216,20 +216,19 @@ void ABannerActor::UpdateFadeOut(float DeltaTime)
 
 void ABannerActor::UpdateCameraFacing()
 {
-	// Orient banner to face the camera, constrained to local horizontal plane
+	// Orient banner yaw to face camera, keep pitch/roll zero so text stays upright
 	APlayerCameraManager* CamMgr = UGameplayStatics::GetPlayerCameraManager(this, 0);
 	if (!CamMgr) return;
 
 	const FVector CamPos = CamMgr->GetCameraLocation();
 	const FVector BannerPos = GetActorLocation();
-	FVector ToCamera = CamPos - BannerPos;
-
-	// Project onto horizontal plane (zero out Z)
-	ToCamera.Z = 0.0f;
+	const FVector ToCamera = CamPos - BannerPos;
 
 	if (ToCamera.SizeSquared() > 1.0f)
 	{
-		FRotator LookAtRot = ToCamera.Rotation();
+		const FRotator FullLook = ToCamera.Rotation();
+		// Only use yaw from look-at; zero pitch/roll keeps banner upright
+		FRotator LookAtRot(0.0f, FullLook.Yaw, 0.0f);
 		LookAtRot += BannerRotationOffset;
 		SetActorRotation(LookAtRot);
 	}

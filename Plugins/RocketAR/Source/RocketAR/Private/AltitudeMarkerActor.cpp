@@ -163,13 +163,13 @@ void AAltitudeMarkerActor::UpdateCameraFacing()
 
 	const FVector CamPos = CamMgr->GetCameraLocation();
 	const FVector MarkerPos = GetActorLocation();
-	FVector ToCamera = CamPos - MarkerPos;
-	ToCamera.Z = 0.0f;
+	const FVector ToCamera = CamPos - MarkerPos;
 
 	if (ToCamera.SizeSquared() > 1.0f)
 	{
-		FRotator LookRot = ToCamera.Rotation();
-		// Apply user rotation offset
+		const FRotator FullLook = ToCamera.Rotation();
+		// Only use yaw; zero pitch/roll keeps marker upright
+		FRotator LookRot(0.0f, FullLook.Yaw, 0.0f);
 		LookRot += MarkerRotationOffset;
 		SetActorRotation(LookRot);
 	}
