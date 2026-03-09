@@ -52,7 +52,7 @@ ABannerActor* UBannerManager::SpawnBanner(const FFlightEventData& EventData)
 
 	ABannerActor* Banner = World->SpawnActor<ABannerActor>(
 		BannerActorClass ? BannerActorClass.Get() : ABannerActor::StaticClass(),
-		FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+		LastVehicleUEPosition, FRotator::ZeroRotator, SpawnParams);
 
 	if (!Banner)
 	{
@@ -75,9 +75,29 @@ ABannerActor* UBannerManager::SpawnBanner(const FFlightEventData& EventData)
 	ActiveBanners.Add(Banner);
 	SET_DWORD_STAT(STAT_ActiveBanners, ActiveBanners.Num());
 
-	UE_LOG(LogRocketAR, Log, TEXT("BannerManager: Spawned banner '%s' (total: %d)"),
-		*EventData.EventLabel, ActiveBanners.Num());
+	UE_LOG(LogRocketAR, Log, TEXT("BannerManager: Spawned banner '%s' at (%.0f, %.0f, %.0f) mat=%s (total: %d)"),
+		*EventData.EventLabel,
+		LastVehicleUEPosition.X, LastVehicleUEPosition.Y, LastVehicleUEPosition.Z,
+		BannerMaterial ? *BannerMaterial->GetName() : TEXT("NULL"),
+		ActiveBanners.Num());
 
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 10.0f, FColor::Yellow,
+			FString::Printf(TEXT("BANNER: %s at (%.0f, %.0f, %.0f)"),
+				*EventData.EventLabel,
+				LastVehicleUEPosition.X, LastVehicleUEPosition.Y, LastVehicleUEPosition.Z));
+	}
+
+	return Banner;
+}
+
+ABannerActor* UBannerManager::SpawnBannerAtPosition(const FFlightEventData& EventData, const FVector& UEPosition)
+{
+	FVector SavedPos = LastVehicleUEPosition;
+	LastVehicleUEPosition = UEPosition;
+	ABannerActor* Banner = SpawnBanner(EventData);
+	LastVehicleUEPosition = SavedPos;
 	return Banner;
 }
 

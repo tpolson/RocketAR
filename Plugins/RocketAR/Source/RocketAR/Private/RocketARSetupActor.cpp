@@ -6,9 +6,14 @@
 #include "CSVTelemetryProvider.h"
 #include "DevVisualizationActor.h"
 #include "RocketARModule.h"
+#include "RocketARHUD.h"
+#include "BannerActor.h"
+#include "AltitudeMarkerActor.h"
 #include "CineCameraActor.h"
 #include "Engine/DirectionalLight.h"
 #include "Components/DirectionalLightComponent.h"
+#include "Engine/SkyLight.h"
+#include "Components/SkyLightComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
@@ -40,13 +45,26 @@ void ARocketARSetupActor::BeginPlay()
 	SetupGeoreference();
 	SetupCamera();
 
-	if (bUseCSVProvider)
+	if (bUseCSVProvider && !bFreezeFrameMode)
 	{
 		SetupCSVProvider();
 	}
 
 	SetupDevVisualization();
+
+	// Attach camera to unscaled rocket mount point so it moves rigidly with the rocket
+	if (CameraManager && DevVisActor && DevVisActor->GetRocketMountPoint())
+	{
+		CameraManager->AttachToComponent(DevVisActor->GetRocketMountPoint());
+	}
+
 	WireSubsystems();
+	SetupHUD();
+
+	if (bFreezeFrameMode)
+	{
+		SetupFreezeFrame();
+	}
 
 	UE_LOG(LogRocketAR, Log, TEXT("RocketAR Setup Actor: Initialization complete"));
 }
@@ -109,6 +127,7 @@ void ARocketARSetupActor::SetupCamera()
 	{
 		CameraManager->CameraMountOffset = CameraMountOffset;
 		CameraManager->CameraMountRotation = CameraMountRotation;
+		CameraManager->CameraOpticalRoll = CameraOpticalRoll;
 		CameraManager->CameraHFOV = CameraHFOV;
 		CameraManager->SetCameraActor(CameraActor);
 		CameraManager->SetGeoreference(Georeference);
@@ -156,6 +175,19 @@ void ARocketARSetupActor::SetupDevVisualization()
 
 	if (DevVisActor)
 	{
+		// Compute Earth center and pole direction in UE space via Cesium
+#if WITH_CESIUM
+		if (Georeference)
+		{
+			const FVector EarthCenterUE = Georeference->TransformEarthCenteredEarthFixedPositionToUnreal(
+				FVector(0.0, 0.0, 0.0));
+			// North pole is at ECEF (0, 0, EarthRadius)
+			const FVector NorthPoleUE = Georeference->TransformEarthCenteredEarthFixedPositionToUnreal(
+				FVector(0.0, 0.0, 6378137.0));
+			const FVector PoleDirection = (NorthPoleUE - EarthCenterUE).GetSafeNormal();
+			DevVisActor->SetEarthTransform(EarthCenterUE, PoleDirection);
+		}
+#endif
 		DevVisActor->SetVisible(bDevVisualization);
 		bDevVisLastState = bDevVisualization;
 		UE_LOG(LogRocketAR, Log, TEXT("Dev visualization actor spawned (visible=%s)"),
@@ -163,17 +195,114 @@ void ARocketARSetupActor::SetupDevVisualization()
 	}
 
 	// Spawn a directional light (sun) for dev lighting
+	// UE origin is at launch pad with Cesium ENU: X=East, Y=South, Z=Up
+	// Sun coming from above and slightly south/east — illuminates rocket and Earth
 	ADirectionalLight* Sun = World->SpawnActor<ADirectionalLight>(
 		ADirectionalLight::StaticClass(),
 		FVector::ZeroVector,
-		FRotator(-45.0f, -30.0f, 0.0f),
+		FRotator(-60.0f, 145.0f, 0.0f),
 		SpawnParams);
 	if (Sun)
 	{
-		Sun->GetLightComponent()->SetIntensity(3.14f);
+		Sun->GetLightComponent()->SetIntensity(10.0f);
 		Sun->GetLightComponent()->SetLightColor(FLinearColor(1.0f, 0.95f, 0.85f));
 		UE_LOG(LogRocketAR, Log, TEXT("Dev sun light spawned"));
 	}
+
+	// Spawn a sky light for ambient fill
+	ASkyLight* Sky = World->SpawnActor<ASkyLight>(
+		ASkyLight::StaticClass(),
+		FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+	if (Sky)
+	{
+		USkyLightComponent* SkyComp = Sky->GetLightComponent();
+		SkyComp->SetIntensity(2.0f);
+		SkyComp->SetLightColor(FLinearColor(0.6f, 0.7f, 1.0f));
+		SkyComp->bLowerHemisphereIsBlack = false;
+		SkyComp->RecaptureSky();
+		UE_LOG(LogRocketAR, Log, TEXT("Dev sky light spawned"));
+	}
+}
+
+
+void ARocketARSetupActor::SetupFreezeFrame()
+{
+	UE_LOG(LogRocketAR, Log, TEXT("=== FREEZE FRAME MODE === Alt=%.0fm Label=%s"),
+		FreezeFrameAltitude, *FreezeFrameEventLabel);
+
+	// Position rocket straight up at the configured altitude (cm)
+	const FVector RocketUEPos = FVector(0.0, 0.0, FreezeFrameAltitude * 100.0);
+
+	// Place the dev visualization rocket
+	if (DevVisActor)
+	{
+		FProcessedTelemetryData FakeData;
+		FakeData.UEPosition = RocketUEPos;
+		FakeData.AltitudeASL = FreezeFrameAltitude;
+		FakeData.VelocityMagnitude = 500.0;
+		FakeData.RawData.MissionElapsedTime = 60.0;
+		FakeData.RawData.bTelemetryValid = true;
+		DevVisActor->UpdateFromTelemetry(FakeData);
+
+		// Second update so velocity orientation works (needs two positions)
+		FakeData.UEPosition = RocketUEPos + FVector(0.0, 0.0, 100.0);
+		DevVisActor->UpdateFromTelemetry(FakeData);
+
+		// Set back to exact position
+		FakeData.UEPosition = RocketUEPos;
+		DevVisActor->UpdateFromTelemetry(FakeData);
+	}
+
+	// Update camera mount point
+	if (CameraManager)
+	{
+		FProcessedTelemetryData FakeData;
+		FakeData.UEPosition = RocketUEPos;
+		CameraManager->UpdateFromTelemetry(FakeData);
+	}
+
+	// Cache position for banner manager
+	LastVehicleUEPosition = RocketUEPos;
+	if (BannerManager)
+	{
+		BannerManager->UpdateVehiclePosition(RocketUEPos);
+	}
+
+	// Spawn a test banner
+	FFlightEventData TestEvent;
+	TestEvent.EventType = EFlightEvent::MaxQ;
+	TestEvent.EventLabel = FreezeFrameEventLabel;
+	TestEvent.MET = 60.0;
+	TestEvent.Altitude = FreezeFrameAltitude;
+	TestEvent.Velocity = 500.0;
+
+	if (BannerManager)
+	{
+		BannerManager->SpawnBanner(TestEvent);
+	}
+
+	// Also fire the event disk if enabled
+	if (DevVisActor && bDevVisualization && bShowEventDisks)
+	{
+		DevVisActor->SpawnEventDisk(RocketUEPos, FQuat::Identity, FreezeFrameEventLabel);
+	}
+
+	// Update HUD
+	if (HUDOverlay && bShowHUD)
+	{
+		FProcessedTelemetryData FakeData;
+		FakeData.AltitudeASL = FreezeFrameAltitude;
+		FakeData.VelocityMagnitude = 500.0;
+		FakeData.RawData.MissionElapsedTime = 60.0;
+		HUDOverlay->UpdateTelemetry(FakeData);
+		HUDOverlay->ShowEvent(TestEvent);
+	}
+
+	FreezeFrameAltitudeLast = FreezeFrameAltitude;
+	FreezeFrameEventLabelLast = FreezeFrameEventLabel;
+
+	UE_LOG(LogRocketAR, Log, TEXT("Freeze frame: rocket at (%.0f, %.0f, %.0f), banner spawned"),
+		RocketUEPos.X, RocketUEPos.Y, RocketUEPos.Z);
 }
 
 void ARocketARSetupActor::WireSubsystems()
@@ -207,12 +336,41 @@ void ARocketARSetupActor::WireSubsystems()
 		BannerManager->MaxActiveBanners = MaxActiveBanners;
 		BannerManager->BannerMaterial = BannerMaterial;
 		BannerManager->BannerFont = BannerFont;
+
 		BannerManager->SetEventDetector(EventDetector);
+	}
+
+	// Wire event detector to dev visualization for disk markers
+	if (EventDetector)
+	{
+		EventDetector->OnFlightEvent.AddDynamic(this, &ARocketARSetupActor::OnFlightEventDetected);
 	}
 }
 
 void ARocketARSetupActor::OnTelemetryUpdated(const FProcessedTelemetryData& Data)
 {
+	// Cache vehicle transform for event disk placement
+	LastVehicleUEPosition = Data.UEPosition;
+	LastVehicleUERotation = Data.UERotation;
+
+	// Cache UE-space velocity for predictive banner placement
+	if (!PrevUEPosition.IsZero())
+	{
+		LastVehicleUEVelocity = (Data.UEPosition - PrevUEPosition) / FMath::Max(GetWorld()->GetDeltaSeconds(), 0.001f);
+	}
+	PrevUEPosition = Data.UEPosition;
+	LastAltitudeASL = Data.AltitudeASL;
+	LastVerticalVelocity = Data.VerticalVelocity;
+
+	// Update pre-placed altitude banners along current trajectory
+	UpdatePrePlacedBanners();
+
+	// Update banner manager with current position
+	if (BannerManager)
+	{
+		BannerManager->UpdateVehiclePosition(Data.UEPosition);
+	}
+
 	// Feed processed telemetry to event detector
 	if (EventDetector)
 	{
@@ -229,6 +387,12 @@ void ARocketARSetupActor::OnTelemetryUpdated(const FProcessedTelemetryData& Data
 	if (DevVisActor && DevVisActor->IsVisible())
 	{
 		DevVisActor->UpdateFromTelemetry(Data);
+	}
+
+	// Update HUD overlay
+	if (HUDOverlay && bShowHUD)
+	{
+		HUDOverlay->UpdateTelemetry(Data);
 	}
 }
 
@@ -248,11 +412,18 @@ void ARocketARSetupActor::Tick(float DeltaTime)
 		}
 	}
 
+	// Retry HUD setup if PC wasn't ready during BeginPlay
+	if (!HUDOverlay && bShowHUD)
+	{
+		SetupHUD();
+	}
+
 	// Sync config changes at runtime
 	if (CameraManager)
 	{
 		CameraManager->CameraMountOffset = CameraMountOffset;
 		CameraManager->CameraMountRotation = CameraMountRotation;
+		CameraManager->CameraOpticalRoll = CameraOpticalRoll;
 		CameraManager->CameraHFOV = CameraHFOV;
 	}
 
@@ -261,6 +432,19 @@ void ARocketARSetupActor::Tick(float DeltaTime)
 	{
 		DevVisActor->SetVisible(bDevVisualization);
 		bDevVisLastState = bDevVisualization;
+	}
+
+	// Live-sync freeze frame — re-run when altitude or label changes
+	if (bFreezeFrameMode &&
+		(FreezeFrameAltitude != FreezeFrameAltitudeLast || FreezeFrameEventLabel != FreezeFrameEventLabelLast))
+	{
+		// Clear old test banners and disks
+		if (BannerManager) BannerManager->DestroyAllBanners();
+		if (DevVisActor) DevVisActor->ClearEventDisks();
+
+		SetupFreezeFrame();
+		FreezeFrameAltitudeLast = FreezeFrameAltitude;
+		FreezeFrameEventLabelLast = FreezeFrameEventLabel;
 	}
 }
 
@@ -272,6 +456,30 @@ void ARocketARSetupActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 
 	Super::EndPlay(EndPlayReason);
+}
+
+void ARocketARSetupActor::SetupHUD()
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	APlayerController* PC = World->GetFirstPlayerController();
+	if (PC)
+	{
+		// Replace the default HUD with our custom canvas HUD
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		HUDOverlay = World->SpawnActor<ARocketARHUD>(
+			ARocketARHUD::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+
+		if (HUDOverlay)
+		{
+			// Set as the player's HUD
+			PC->MyHUD = HUDOverlay;
+			HUDOverlay->SetOwner(PC);
+			UE_LOG(LogRocketAR, Log, TEXT("RocketAR HUD overlay spawned"));
+		}
+	}
 }
 
 // ITelemetryProvider implementation (Method B: direct Blueprint variables)
@@ -296,6 +504,141 @@ bool ARocketARSetupActor::IsTelemetryAvailable_Implementation() const
 int32 ARocketARSetupActor::GetProviderPriority_Implementation() const
 {
 	return 50;
+}
+
+void ARocketARSetupActor::OnFlightEventDetected(const FFlightEventData& EventData)
+{
+	UE_LOG(LogRocketAR, Log, TEXT("Flight event: %s at MET=%.1f, Alt=%.0fm"),
+		*EventData.EventLabel, EventData.MET, EventData.Altitude);
+
+	// Altitude markers are pre-placed — don't spawn again
+	if (EventData.EventType != EFlightEvent::AltitudeMarker)
+	{
+		// Dynamic events: predict position ahead
+		const FVector PredictedPosition = LastVehicleUEPosition + LastVehicleUEVelocity * BannerLeadTimeSeconds;
+
+		if (DevVisActor && bDevVisualization && bShowEventDisks)
+		{
+			DevVisActor->SpawnEventDisk(PredictedPosition, LastVehicleUERotation, EventData.EventLabel);
+		}
+
+		// Spawn banner at predicted position for dynamic events
+		if (BannerManager)
+		{
+			ABannerActor* Banner = BannerManager->SpawnBannerAtPosition(EventData, PredictedPosition);
+			if (Banner)
+			{
+				Banner->BannerRotationOffset = BannerRotationOffset;
+			}
+		}
+	}
+	else if (DevVisActor && bDevVisualization && bShowEventDisks)
+	{
+		// Altitude marker disk at current position (banner already pre-placed)
+		DevVisActor->SpawnEventDisk(LastVehicleUEPosition, LastVehicleUERotation, EventData.EventLabel);
+	}
+
+	// Show event on HUD overlay
+	if (HUDOverlay && bShowHUD)
+	{
+		HUDOverlay->ShowEvent(EventData);
+	}
+}
+
+bool ARocketARSetupActor::IsAltitudeBasedEvent(EFlightEvent EventType) const
+{
+	return EventType == EFlightEvent::AltitudeMarker;
+}
+
+void ARocketARSetupActor::UpdatePrePlacedBanners()
+{
+	if (!bShowAltitudeMarkers) return;
+	if (LastVerticalVelocity <= 10.0) return; // Only during ascent with meaningful velocity
+	if (LastVehicleUEVelocity.IsNearlyZero()) return;
+
+	const float Interval = AltitudeMarkerInterval;
+	if (Interval <= 0.0f) return;
+
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	// Find the next N altitude markers above current altitude
+	const double NextMarkerBase = FMath::CeilToDouble(LastAltitudeASL / Interval) * Interval;
+
+	for (int32 i = 0; i < PrePlaceLookAheadCount; ++i)
+	{
+		const double MarkerAlt = NextMarkerBase + i * Interval;
+		if (MarkerAlt <= 0.0) continue;
+
+		// Already have a marker for this altitude?
+		if (PrePlacedAltitudeMarkers.Contains(MarkerAlt))
+		{
+			// Update its position along current trajectory
+			AAltitudeMarkerActor* Existing = PrePlacedAltitudeMarkers[MarkerAlt];
+			if (Existing && IsValid(Existing))
+			{
+				const double TimeToReach = (MarkerAlt - LastAltitudeASL) / FMath::Max(LastVerticalVelocity, 1.0);
+				const FVector PredictedPos = LastVehicleUEPosition + LastVehicleUEVelocity * TimeToReach;
+				Existing->SetActorLocation(PredictedPos);
+			}
+			continue;
+		}
+
+		// Don't pre-place markers we've already passed
+		if (MarkerAlt <= LastAltitudeASL) continue;
+
+		// Predict position for this altitude marker
+		const double TimeToReach = (MarkerAlt - LastAltitudeASL) / FMath::Max(LastVerticalVelocity, 1.0);
+		const FVector PredictedPos = LastVehicleUEPosition + LastVehicleUEVelocity * TimeToReach;
+
+		// Format label
+		FString Label;
+		if (MarkerAlt >= 1000.0)
+		{
+			Label = FString::Printf(TEXT("%.0f km"), MarkerAlt / 1000.0);
+		}
+		else
+		{
+			Label = FString::Printf(TEXT("%.0f m"), MarkerAlt);
+		}
+
+		// Spawn altitude marker actor directly
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		AAltitudeMarkerActor* Marker = World->SpawnActor<AAltitudeMarkerActor>(
+			AAltitudeMarkerActor::StaticClass(), PredictedPos, FRotator::ZeroRotator, SpawnParams);
+
+		if (Marker)
+		{
+			Marker->InitMarker(Label, MarkerAlt,
+				MarkerArcAngle, MarkerArcRadius, MarkerArcHeight, 32,
+				MarkerMaterial, MarkerFont);
+			Marker->LifetimeSeconds = 0.0f; // We manage lifecycle, not auto-fade
+			Marker->MarkerRotationOffset = MarkerRotationOffset;
+			PrePlacedAltitudeMarkers.Add(MarkerAlt, Marker);
+
+			UE_LOG(LogRocketAR, Log, TEXT("Pre-placed altitude marker: %s at predicted pos (%.0f, %.0f, %.0f) T=%.1fs ahead"),
+				*Label, PredictedPos.X, PredictedPos.Y, PredictedPos.Z, TimeToReach);
+		}
+	}
+
+	// Clean up markers we've passed (below current altitude minus some margin)
+	TArray<double> ToRemove;
+	for (auto& Pair : PrePlacedAltitudeMarkers)
+	{
+		if (Pair.Key < LastAltitudeASL - Interval)
+		{
+			if (Pair.Value && IsValid(Pair.Value))
+			{
+				Pair.Value->StartFadeOut();
+			}
+			ToRemove.Add(Pair.Key);
+		}
+	}
+	for (double Alt : ToRemove)
+	{
+		PrePlacedAltitudeMarkers.Remove(Alt);
+	}
 }
 
 void ARocketARSetupActor::SetTelemetryData(const FTelemetryInputData& InData)

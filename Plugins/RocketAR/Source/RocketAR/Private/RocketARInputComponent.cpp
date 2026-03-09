@@ -3,6 +3,7 @@
 #include "CSVTelemetryProvider.h"
 #include "BannerManager.h"
 #include "FlightEventDetector.h"
+#include "DevVisualizationActor.h"
 #include "RocketARModule.h"
 #include "GameFramework/PlayerController.h"
 #include "Engine/World.h"
@@ -126,6 +127,10 @@ void URocketARInputComponent::OnReset()
 	// Destroy all banners
 	UBannerManager* Banners = SetupActor->GetBannerManager();
 	if (Banners) Banners->DestroyAllBanners();
+
+	// Clear event disks
+	ADevVisualizationActor* DevVis = SetupActor->GetDevVisActor();
+	if (DevVis) DevVis->ClearEventDisks();
 
 	UE_LOG(LogRocketAR, Log, TEXT("Input: Full Reset"));
 }

@@ -74,6 +74,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
 	float FadeOutDuration = 1.0f;
 
+	/** Additional rotation offset applied after camera-facing (degrees) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
+	FRotator BannerRotationOffset = FRotator::ZeroRotator;
+
 protected:
 	void UpdateSpawnAnimation(float DeltaTime);
 	void UpdateFadeOut(float DeltaTime);

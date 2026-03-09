@@ -80,6 +80,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "CSV Playback")
 	int32 GetRowCount() const { return Rows.Num(); }
 
+	/** Access raw CSV rows for offline analysis (e.g. pre-spawning banners) */
+	const TArray<FCSVTelemetryRow>& GetRows() const { return Rows; }
+
 	/** Path to the CSV file (relative to Content directory or absolute) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CSV")
 	FString CSVFilePath = TEXT("Data/SimulatedTelemetry.csv");

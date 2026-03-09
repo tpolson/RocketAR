@@ -55,7 +55,7 @@ void UProceduralArcMesh::GenerateArcMesh(
 		}
 	}
 
-	// Generate triangles (2 triangles per quad, CW winding for inside-facing)
+	// Generate triangles — double-sided (both inward and outward facing)
 	for (int32 Col = 0; Col < Segments; ++Col)
 	{
 		const int32 BL = Col;                    // Bottom-left
@@ -63,14 +63,22 @@ void UProceduralArcMesh::GenerateArcMesh(
 		const int32 TL = Col + VerticesPerRow;   // Top-left
 		const int32 TR = Col + 1 + VerticesPerRow; // Top-right
 
-		// Triangle 1 (facing inward)
+		// Front face (inward)
 		OutTriangles.Add(BL);
 		OutTriangles.Add(TL);
 		OutTriangles.Add(BR);
 
-		// Triangle 2
 		OutTriangles.Add(BR);
 		OutTriangles.Add(TL);
 		OutTriangles.Add(TR);
+
+		// Back face (outward)
+		OutTriangles.Add(BR);
+		OutTriangles.Add(TL);
+		OutTriangles.Add(BL);
+
+		OutTriangles.Add(TR);
+		OutTriangles.Add(TL);
+		OutTriangles.Add(BR);
 	}
 }

@@ -30,6 +30,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Banner Manager")
 	ABannerActor* SpawnBanner(const FFlightEventData& EventData);
 
+	/** Spawn a banner at a specific UE world position */
+	UFUNCTION(BlueprintCallable, Category = "Banner Manager")
+	ABannerActor* SpawnBannerAtPosition(const FFlightEventData& EventData, const FVector& UEPosition);
+
+	/** Update the cached vehicle UE position (called each telemetry frame) */
+	void UpdateVehiclePosition(const FVector& UEPosition) { LastVehicleUEPosition = UEPosition; }
+
 	/** Destroy all active banners */
 	UFUNCTION(BlueprintCallable, Category = "Banner Manager")
 	void DestroyAllBanners();
@@ -43,10 +50,10 @@ public:
 	float BannerArcAngle = 120.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config")
-	float BannerArcRadius = 300.0f; // cm (3m)
+	float BannerArcRadius = 10000.0f; // cm (100m)
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config")
-	float BannerArcHeight = 150.0f; // cm (1.5m)
+	float BannerArcHeight = 5000.0f; // cm (50m)
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config")
 	int32 BannerArcSegments = 32;
@@ -84,4 +91,6 @@ private:
 
 	UPROPERTY()
 	UFlightEventDetector* EventDetector = nullptr;
+
+	FVector LastVehicleUEPosition = FVector::ZeroVector;
 };

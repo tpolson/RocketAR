@@ -26,7 +26,10 @@ public:
 	/** Set the Cesium georeference for ECEF→UE conversion */
 	void SetGeoreference(ACesiumGeoreference* InGeoreference);
 
-	/** Update camera from processed telemetry data */
+	/** Attach camera to a scene component (e.g., rocket mesh). Camera follows it automatically. */
+	void AttachToComponent(USceneComponent* Parent);
+
+	/** Update camera from processed telemetry data (only used when not attached) */
 	UFUNCTION(BlueprintCallable, Category = "Camera")
 	void UpdateFromTelemetry(const FProcessedTelemetryData& Data);
 
@@ -45,11 +48,18 @@ public:
 
 	/** Body-frame rotation (degrees). Pitch down to look back along rocket body. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera Config")
-	FRotator CameraMountRotation = FRotator(-75.0f, -10.0f, 0.0f);
+	FRotator CameraMountRotation = FRotator(-80.0f, -10.0f, 0.0f);
+
+	/** Roll around the camera's optical axis (degrees, positive=CW, negative=CCW) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera Config")
+	float CameraOpticalRoll = 45.0f;
 
 	/** Horizontal field of view (degrees) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera Config", meta=(ClampMin="1.0", ClampMax="180.0"))
 	float CameraHFOV = 110.0f;
+
+	/** Apply mount offset and optical roll to the attached camera */
+	void UpdateRelativeTransform();
 
 private:
 	UPROPERTY()
@@ -57,6 +67,8 @@ private:
 
 	UPROPERTY()
 	ACesiumGeoreference* Georeference = nullptr;
+
+	bool bAttachedToParent = false;
 
 	FVector ECEFToUE(const FVector& ECEFPos) const;
 	FQuat ECEFRotToUE(const FQuat& ECEFRot) const;

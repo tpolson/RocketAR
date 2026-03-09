@@ -18,6 +18,8 @@ ABannerActor::ABannerActor()
 	MeshComponent->bCastDynamicShadow = false;
 	MeshComponent->CastShadow = false;
 	MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	MeshComponent->SetCullDistance(0); // Never distance-cull
+	MeshComponent->bUseAsOccluder = false;
 	RootComponent = MeshComponent;
 }
 
@@ -64,24 +66,28 @@ void ABannerActor::InitBanner(
 		RenderTextToTarget();
 	}
 
-	// Create dynamic material instance
-	if (BannerMaterial)
+	// Always use bright opaque material for now (debug visibility)
 	{
-		DynamicMaterial = UMaterialInstanceDynamic::Create(BannerMaterial, this);
-		if (DynamicMaterial && RenderTarget)
+		UMaterialInterface* BaseMat = LoadObject<UMaterialInterface>(nullptr,
+			TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+		if (BaseMat)
 		{
-			DynamicMaterial->SetTextureParameterValue(TEXT("BannerTexture"), RenderTarget);
-			DynamicMaterial->SetScalarParameterValue(TEXT("Opacity"), 0.0f); // Start invisible for animation
-			MeshComponent->SetMaterial(0, DynamicMaterial);
+			DynamicMaterial = UMaterialInstanceDynamic::Create(BaseMat, this);
+			if (DynamicMaterial)
+			{
+				DynamicMaterial->SetVectorParameterValue(TEXT("Color"), FLinearColor(1.0f, 1.0f, 0.0f, 1.0f));
+				MeshComponent->SetMaterial(0, DynamicMaterial);
+			}
 		}
+		UE_LOG(LogRocketAR, Log, TEXT("Banner: using bright yellow debug material"));
 	}
 
-	// Start spawn animation
-	State = EBannerState::SpawnAnimation;
-	SpawnAnimTime = 0.0f;
-	SetActorScale3D(FVector::ZeroVector);
+	// Skip spawn animation for now — start fully visible for debugging
+	State = EBannerState::Active;
+	SetActorScale3D(FVector::OneVector);
 
-	UE_LOG(LogRocketAR, Verbose, TEXT("Banner initialized: %s"), *EventData.EventLabel);
+	UE_LOG(LogRocketAR, Log, TEXT("Banner initialized: '%s' at (%.0f, %.0f, %.0f)"),
+		*EventData.EventLabel, GetActorLocation().X, GetActorLocation().Y, GetActorLocation().Z);
 }
 
 void ABannerActor::RenderTextToTarget()
@@ -223,8 +229,9 @@ void ABannerActor::UpdateCameraFacing()
 
 	if (ToCamera.SizeSquared() > 1.0f)
 	{
-		const FRotator LookAtRot = ToCamera.Rotation();
-		SetActorRotation(FRotator(0.0f, LookAtRot.Yaw, 0.0f));
+		FRotator LookAtRot = ToCamera.Rotation();
+		LookAtRot += BannerRotationOffset;
+		SetActorRotation(LookAtRot);
 	}
 }
 

@@ -32,6 +32,41 @@ void URocketARCameraManager::SetCameraActor(ACineCameraActor* InCamera)
 	}
 }
 
+void URocketARCameraManager::AttachToComponent(USceneComponent* Parent)
+{
+	if (!CameraActor || !Parent) return;
+
+	CameraActor->AttachToComponent(Parent, FAttachmentTransformRules::KeepRelativeTransform);
+	bAttachedToParent = true;
+
+	UpdateRelativeTransform();
+
+	UE_LOG(LogRocketAR, Log, TEXT("Camera attached to %s"), *Parent->GetName());
+}
+
+void URocketARCameraManager::UpdateRelativeTransform()
+{
+	if (!CameraActor) return;
+
+	// Mount offset is relative to parent (rocket mesh Z = rocket axis)
+	// Mount rotation + optical roll applied as relative rotation
+	const FQuat MountRotQuat = CameraMountRotation.Quaternion();
+
+	// Apply optical roll around the aimed forward axis
+	const FVector AimedForward = MountRotQuat.GetForwardVector();
+	const FQuat OpticalRollQuat(AimedForward, FMath::DegreesToRadians(CameraOpticalRoll));
+	const FQuat FinalRot = OpticalRollQuat * MountRotQuat;
+
+	CameraActor->SetActorRelativeLocation(CameraMountOffset);
+	CameraActor->SetActorRelativeRotation(FinalRot.Rotator());
+
+	UCineCameraComponent* CineComp = CameraActor->GetCineCameraComponent();
+	if (CineComp)
+	{
+		CineComp->SetFieldOfView(CameraHFOV);
+	}
+}
+
 FVector URocketARCameraManager::ECEFToUE(const FVector& ECEFPos) const
 {
 #if WITH_CESIUM
@@ -61,24 +96,29 @@ void URocketARCameraManager::UpdateFromTelemetry(const FProcessedTelemetryData& 
 {
 	if (!CameraActor) return;
 
-	// Vehicle position and rotation in UE space
+	// If attached to rocket mesh, just update relative transform (config may have changed)
+	if (bAttachedToParent)
+	{
+		UpdateRelativeTransform();
+		return;
+	}
+
+	// Fallback: manual world-space positioning (when no rocket mesh to attach to)
 	const FVector VehicleUEPos = Data.UEPosition;
 	const FQuat VehicleUERot = Data.UERotation;
 
-	// Apply body-fixed mounting offset:
-	// CameraWorldPos = VehicleWorldPos + VehicleWorldRot.RotateVector(MountOffset)
 	const FVector WorldOffset = VehicleUERot.RotateVector(CameraMountOffset);
 	const FVector CameraPos = VehicleUEPos + WorldOffset;
 
-	// Apply mounting rotation:
-	// CameraWorldRot = VehicleWorldRot * MountRotation
 	const FQuat MountRotQuat = CameraMountRotation.Quaternion();
-	const FQuat CameraRot = VehicleUERot * MountRotQuat;
+	const FQuat AimedRot = VehicleUERot * MountRotQuat;
 
-	CameraActor->SetActorLocation(CameraPos);
-	CameraActor->SetActorRotation(CameraRot);
+	const FVector CameraForward = AimedRot.GetForwardVector();
+	const FQuat OpticalRollQuat(CameraForward, FMath::DegreesToRadians(CameraOpticalRoll));
+	const FQuat CameraRot = OpticalRollQuat * AimedRot;
 
-	// Update FOV
+	CameraActor->TeleportTo(CameraPos, CameraRot.Rotator(), false, true);
+
 	UCineCameraComponent* CineComp = CameraActor->GetCineCameraComponent();
 	if (CineComp)
 	{
@@ -90,7 +130,4 @@ void URocketARCameraManager::TickComponent(float DeltaTime, ELevelTick TickType,
 	FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-
-	// Camera updates are driven by UpdateFromTelemetry called from the setup actor
-	// No autonomous tick logic needed
 }

@@ -9,9 +9,10 @@ class UStaticMeshComponent;
 class UMaterialInstanceDynamic;
 
 /**
- * Development visualization: Earth sphere + rocket cylinder.
+ * Development visualization: Earth sphere + rocket cylinder + event disks.
  * Earth is real scale, centered at ECEF origin (below the UE origin by Earth radius).
  * Rocket cylinder tracks vehicle position each frame.
+ * Event disks are spawned at flight event positions on the rocket axis.
  * Visible in viewport for dev; excluded from broadcast output via toggle.
  */
 UCLASS(BlueprintType)
@@ -28,12 +29,26 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Dev")
 	void UpdateFromTelemetry(const FProcessedTelemetryData& Data);
 
+	/** Spawn a disk marker at an event position (UE space) */
+	UFUNCTION(BlueprintCallable, Category = "Dev")
+	void SpawnEventDisk(const FVector& UEPosition, const FQuat& UERotation, const FString& Label);
+
+	/** Remove all event disks */
+	UFUNCTION(BlueprintCallable, Category = "Dev")
+	void ClearEventDisks();
+
 	/** Show or hide all dev visualization */
 	UFUNCTION(BlueprintCallable, Category = "Dev")
 	void SetVisible(bool bVisible);
 
+	/** Set the Earth center and pole direction in UE space (from ECEF via Cesium) */
+	void SetEarthTransform(const FVector& CenterUE, const FVector& NorthPoleDirectionUE);
+
 	UFUNCTION(BlueprintCallable, Category = "Dev")
 	bool IsVisible() const { return bIsVisible; }
+
+	/** Get the unscaled mount point at rocket base (for camera attachment) */
+	USceneComponent* GetRocketMountPoint() const { return RocketMountPoint; }
 
 private:
 	UPROPERTY()
@@ -47,6 +62,26 @@ private:
 
 	UPROPERTY()
 	UMaterialInstanceDynamic* RocketMaterial = nullptr;
+
+	/** Unscaled component at rocket base position+rotation — camera attaches here */
+	UPROPERTY()
+	USceneComponent* RocketMountPoint = nullptr;
+
+	UPROPERTY()
+	UMaterialInstanceDynamic* DiskMaterial = nullptr;
+
+	UPROPERTY()
+	TArray<UStaticMeshComponent*> EventDiskMeshes;
+
+	UPROPERTY()
+	UStaticMesh* CylinderMeshAsset = nullptr;
+
+	/** Previous UE position for velocity-based rocket orientation */
+	FVector PrevUEPosition = FVector::ZeroVector;
+	bool bHasPrevPosition = false;
+
+	/** Current rocket orientation (aligned to velocity) */
+	FQuat RocketOrientation = FQuat::Identity;
 
 	bool bIsVisible = true;
 };

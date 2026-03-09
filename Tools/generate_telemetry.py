@@ -2,13 +2,26 @@
 """
 Generate synthetic SLS-like ascent telemetry CSV for RocketAR development.
 
-Produces a realistic trajectory from KSC launch pad through:
-  Ignition → Liftoff → Gravity Turn → Mach 1 → Max-Q → SRB Sep → MECO →
-  Coast → Second Stage Ignition → Fairing Sep → SECO → Apogee
+Produces a realistic trajectory through:
+  Ignition -> Liftoff -> Gravity Turn -> Mach 1 -> Max-Q -> SRB Sep -> MECO ->
+  Coast -> Second Stage Ignition -> Fairing Sep -> SECO -> Apogee
 
 All positions in ECEF (meters), quaternion XYZW, 10Hz output.
+
+Usage:
+  python generate_telemetry.py [options]
+
+Options:
+  --site NAME        Preset launch site: ksc, vandenberg, wallops, boca-chica
+  --lat DEGREES      Custom launch latitude (decimal degrees)
+  --lon DEGREES      Custom launch longitude (decimal degrees)
+  --alt METERS       Custom launch altitude ASL (default: 0)
+  --azimuth DEGREES  Launch azimuth from north (default: auto from site)
+  --output PATH      Output CSV path (default: Content/Data/SimulatedTelemetry.csv)
+  --help             Show this help
 """
 
+import argparse
 import csv
 import math
 import sys
@@ -19,10 +32,17 @@ WGS84_A = 6378137.0        # semi-major axis (m)
 WGS84_B = 6356752.314245   # semi-minor axis (m)
 WGS84_E2 = 0.00669437999014
 
-# KSC Launch Complex 39A
-LAUNCH_LAT = math.radians(28.5729)
-LAUNCH_LON = math.radians(-80.6490)
-LAUNCH_ALT = 0.0
+# Preset launch sites: (lat_deg, lon_deg, alt_m, azimuth_deg, description)
+LAUNCH_SITES = {
+    'ksc': (28.5729, -80.6490, 0.0, 90.0,
+            'Kennedy Space Center LC-39A, Florida'),
+    'vandenberg': (34.5811, -120.6257, 150.0, 196.0,
+                   'Vandenberg SFB SLC-6, California'),
+    'wallops': (37.8337, -75.4881, 0.0, 90.0,
+                'Wallops Flight Facility, Virginia'),
+    'boca-chica': (25.9972, -97.1571, 0.0, 97.0,
+                   'SpaceX Starbase, Boca Chica, Texas'),
+}
 
 # Time parameters
 DT = 0.1  # 10 Hz
@@ -95,20 +115,31 @@ def us_std_atm_density(alt_m):
     return rho
 
 
-def generate_trajectory():
-    """Generate a synthetic SLS-like ascent trajectory."""
+def generate_trajectory(launch_lat_rad, launch_lon_rad, launch_alt, azimuth_rad):
+    """Generate a synthetic SLS-like ascent trajectory from given launch site."""
     rows = []
 
     # Launch pad ECEF
-    pad_ecef = geodetic_to_ecef(LAUNCH_LAT, LAUNCH_LON, LAUNCH_ALT)
+    pad_ecef = geodetic_to_ecef(launch_lat_rad, launch_lon_rad, launch_alt)
 
-    # State variables (local ENU frame, then convert to ECEF)
+    # Precompute ENU basis vectors at launch site
+    sin_lat = math.sin(launch_lat_rad)
+    cos_lat = math.cos(launch_lat_rad)
+    sin_lon = math.sin(launch_lon_rad)
+    cos_lon = math.cos(launch_lon_rad)
+
+    # Downrange direction in ENU depends on launch azimuth
+    # Azimuth 0=North, 90=East, 180=South, 270=West
+    az_sin = math.sin(azimuth_rad)
+    az_cos = math.cos(azimuth_rad)
+
+    # State variables (local frame: downrange along azimuth, crossrange perpendicular, up)
     alt = 0.0       # meters above pad
-    downrange = 0.0 # meters east
+    downrange = 0.0 # meters along azimuth
     crossrange = 0.0
 
     vel_up = 0.0
-    vel_east = 0.0
+    vel_downrange = 0.0
 
     pitch = math.radians(90.0)  # Start vertical
 
@@ -123,38 +154,35 @@ def generate_trajectory():
             # Countdown — sitting on pad
             alt = 0.0
             vel_up = 0.0
-            vel_east = 0.0
-            ax, ay, az = 0.0, 0.0, 0.0
+            vel_downrange = 0.0
+            a_downrange, a_cross, a_up = 0.0, 0.0, 0.0
         elif t < LIFTOFF_MET + 0.5:
             # Ignition to liftoff
             thrust_core = CORE_THRUST * min(1.0, (t - LIFTOFF_MET + 3.0) / 3.0)
             thrust_srb = SRB_THRUST if t >= -6.0 else 0.0
-            # SRBs ignite at T+0, but we simplify
             if t >= 0:
                 thrust_srb = SRB_THRUST
 
-            total_accel = 15.0 * (thrust_core + thrust_srb) - 9.81  # simplified
+            total_accel = 15.0 * (thrust_core + thrust_srb) - 9.81
             if total_accel < 0:
                 total_accel = 0
-            ax = 0.0
-            ay = 0.0
-            az = total_accel
+            a_downrange = 0.0
+            a_cross = 0.0
+            a_up = total_accel
         elif t < SRB_SEP_MET:
             # Powered ascent with SRBs
             thrust_core = CORE_THRUST
             thrust_srb = SRB_THRUST * max(0, 1.0 - (t - 100.0) / 30.0) if t > 100 else SRB_THRUST
 
-            # Gravity turn — pitch gradually
             if t > GRAVITY_TURN_MET:
                 turn_frac = min(1.0, (t - GRAVITY_TURN_MET) / 300.0)
                 target_pitch = math.radians(90.0 - 70.0 * turn_frac)
                 pitch = pitch + (target_pitch - pitch) * 0.02
 
             total_thrust = 12.0 * (thrust_core + thrust_srb)
-
-            az = total_thrust * math.sin(pitch) - 9.81
-            ax = total_thrust * math.cos(pitch)
-            ay = 0.0
+            a_up = total_thrust * math.sin(pitch) - 9.81
+            a_downrange = total_thrust * math.cos(pitch)
+            a_cross = 0.0
 
         elif t < MECO_MET:
             # Core stage only (post SRB sep)
@@ -166,17 +194,17 @@ def generate_trajectory():
             pitch = pitch + (target_pitch - pitch) * 0.02
 
             total_thrust = 8.0 * thrust_core
-            az = total_thrust * math.sin(pitch) - 9.81
-            ax = total_thrust * math.cos(pitch)
-            ay = 0.0
+            a_up = total_thrust * math.sin(pitch) - 9.81
+            a_downrange = total_thrust * math.cos(pitch)
+            a_cross = 0.0
 
         elif t < SECOND_STAGE_IGN_MET:
             # Coast phase
             thrust_core = 0.0
             thrust_srb = 0.0
-            az = -9.81 * (WGS84_A / (WGS84_A + alt)) ** 2  # gravity decreases with altitude
-            ax = 0.0
-            ay = 0.0
+            a_up = -9.81 * (WGS84_A / (WGS84_A + alt)) ** 2
+            a_downrange = 0.0
+            a_cross = 0.0
 
         elif t < SECO_MET:
             # Second stage burn
@@ -186,50 +214,50 @@ def generate_trajectory():
             target_pitch = math.radians(90.0 - 85.0 * turn_frac)
             pitch = pitch + (target_pitch - pitch) * 0.01
 
-            az = total_thrust * math.sin(pitch) - 9.81 * (WGS84_A / (WGS84_A + alt)) ** 2
-            ax = total_thrust * math.cos(pitch)
-            ay = 0.0
+            a_up = total_thrust * math.sin(pitch) - 9.81 * (WGS84_A / (WGS84_A + alt)) ** 2
+            a_downrange = total_thrust * math.cos(pitch)
+            a_cross = 0.0
         else:
             # Post SECO — coast to apogee
             thrust_s2 = 0.0
-            az = -9.81 * (WGS84_A / (WGS84_A + alt)) ** 2
-            ax = 0.0
-            ay = 0.0
+            a_up = -9.81 * (WGS84_A / (WGS84_A + alt)) ** 2
+            a_downrange = 0.0
+            a_cross = 0.0
 
         # Integrate (simple Euler)
         if t >= 0:
-            vel_up += az * DT
-            vel_east += ax * DT
+            vel_up += a_up * DT
+            vel_downrange += a_downrange * DT
             alt += vel_up * DT
-            downrange += vel_east * DT
+            downrange += vel_downrange * DT
 
             if alt < 0:
                 alt = 0
                 vel_up = 0
 
-        # Convert local position to ECEF
-        # Local frame: East=downrange, North=crossrange, Up=altitude
-        sin_lat = math.sin(LAUNCH_LAT)
-        cos_lat = math.cos(LAUNCH_LAT)
-        sin_lon = math.sin(LAUNCH_LON)
-        cos_lon = math.cos(LAUNCH_LON)
+        # Convert local (downrange along azimuth, crossrange, up) to ENU
+        enu_e = az_sin * downrange - az_cos * crossrange
+        enu_n = az_cos * downrange + az_sin * crossrange
+        enu_u = alt
 
-        # ENU to ECEF rotation
-        ecef_x = pad_ecef[0] + (-sin_lon * downrange - sin_lat * cos_lon * crossrange + cos_lat * cos_lon * alt)
-        ecef_y = pad_ecef[1] + (cos_lon * downrange - sin_lat * sin_lon * crossrange + cos_lat * sin_lon * alt)
-        ecef_z = pad_ecef[2] + (cos_lat * crossrange + sin_lat * alt)
+        # ENU to ECEF
+        ecef_x = pad_ecef[0] + (-sin_lon * enu_e - sin_lat * cos_lon * enu_n + cos_lat * cos_lon * enu_u)
+        ecef_y = pad_ecef[1] + (cos_lon * enu_e - sin_lat * sin_lon * enu_n + cos_lat * sin_lon * enu_u)
+        ecef_z = pad_ecef[2] + (cos_lat * enu_n + sin_lat * enu_u)
 
-        # Velocity in ECEF (approximate)
-        vel_ecef_x = -sin_lon * vel_east + cos_lat * cos_lon * vel_up
-        vel_ecef_y = cos_lon * vel_east + cos_lat * sin_lon * vel_up
-        vel_ecef_z = sin_lat * vel_up
+        # Velocity: local downrange/up to ENU then to ECEF
+        vel_enu_e = az_sin * vel_downrange
+        vel_enu_n = az_cos * vel_downrange
+        vel_enu_u = vel_up
+
+        vel_ecef_x = -sin_lon * vel_enu_e - sin_lat * cos_lon * vel_enu_n + cos_lat * cos_lon * vel_enu_u
+        vel_ecef_y = cos_lon * vel_enu_e - sin_lat * sin_lon * vel_enu_n + cos_lat * sin_lon * vel_enu_u
+        vel_ecef_z = cos_lat * vel_enu_n + sin_lat * vel_enu_u
 
         # Acceleration in body frame (simplified — mostly axial)
-        total_accel = math.sqrt(ax * ax + ay * ay + az * az)
-        body_accel = (ax, ay, az + 9.81)  # Remove gravity to get body-frame
+        body_accel = (a_downrange, a_cross, a_up + 9.81)  # Remove gravity to get body-frame
 
         # Quaternion: rocket pointing along pitch angle from vertical
-        yaw = math.atan2(downrange, max(alt, 1.0))
         quat = euler_to_quat(pitch - math.radians(90), 0.0, 0.0)
 
         # Build thrust array: [SRB1, SRB2, Core1, Core2, Core3, Core4, Stage2]
@@ -278,7 +306,6 @@ def write_csv(rows, filepath):
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         for row in rows:
-            # Format floats
             formatted = {}
             for k, v in row.items():
                 if isinstance(v, float):
@@ -293,22 +320,71 @@ def write_csv(rows, filepath):
             writer.writerow(formatted)
 
 
-def main():
-    output_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                                'Content', 'Data', 'SimulatedTelemetry.csv')
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description='Generate synthetic SLS-like ascent telemetry CSV.',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='Preset sites: ' + ', '.join(
+            f'{k} ({v[4]})' for k, v in LAUNCH_SITES.items()))
 
-    if len(sys.argv) > 1:
-        output_path = sys.argv[1]
+    parser.add_argument('--site', type=str, default=None,
+                        choices=list(LAUNCH_SITES.keys()),
+                        help='Preset launch site name')
+    parser.add_argument('--lat', type=float, default=None,
+                        help='Launch latitude (decimal degrees)')
+    parser.add_argument('--lon', type=float, default=None,
+                        help='Launch longitude (decimal degrees)')
+    parser.add_argument('--alt', type=float, default=None,
+                        help='Launch altitude ASL (meters)')
+    parser.add_argument('--azimuth', type=float, default=None,
+                        help='Launch azimuth from north (degrees, 90=east)')
+    parser.add_argument('--output', type=str, default=None,
+                        help='Output CSV file path')
+
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+
+    # Determine launch site
+    if args.site:
+        site = LAUNCH_SITES[args.site]
+        lat_deg, lon_deg, alt_m, azimuth_deg, desc = site
+        print(f"Launch site: {desc}")
+    else:
+        # Default to KSC
+        lat_deg = 28.5729
+        lon_deg = -80.6490
+        alt_m = 0.0
+        azimuth_deg = 90.0
+        desc = 'Kennedy Space Center LC-39A (default)'
+        print(f"Launch site: {desc}")
+
+    # Override with explicit args
+    if args.lat is not None:
+        lat_deg = args.lat
+    if args.lon is not None:
+        lon_deg = args.lon
+    if args.alt is not None:
+        alt_m = args.alt
+    if args.azimuth is not None:
+        azimuth_deg = args.azimuth
+
+    print(f"  Lat: {lat_deg:.4f}  Lon: {lon_deg:.4f}  Alt: {alt_m:.0f}m  Azimuth: {azimuth_deg:.0f} deg")
+
+    launch_lat_rad = math.radians(lat_deg)
+    launch_lon_rad = math.radians(lon_deg)
+    azimuth_rad = math.radians(azimuth_deg)
+
+    output_path = args.output
+    if output_path is None:
+        output_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                    'Content', 'Data', 'SimulatedTelemetry.csv')
 
     print(f"Generating SLS-like telemetry data...")
-    rows = generate_trajectory()
+    rows = generate_trajectory(launch_lat_rad, launch_lon_rad, alt_m, azimuth_rad)
     print(f"Generated {len(rows)} rows (MET {rows[0]['MET']:.1f}s to {rows[-1]['MET']:.1f}s)")
-
-    # Print key events timing
-    for row in rows:
-        met = row['MET']
-        alt_approx = math.sqrt(row['PosX']**2 + row['PosY']**2 + row['PosZ']**2) - WGS84_A
-        vel_mag = math.sqrt(row['VelX']**2 + row['VelY']**2 + row['VelZ']**2)
 
     write_csv(rows, output_path)
     print(f"Written to: {output_path}")
