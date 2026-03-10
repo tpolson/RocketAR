@@ -17,6 +17,8 @@ ADevVisualizationActor::ADevVisualizationActor()
 	EarthMesh->SetupAttachment(Root);
 	EarthMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	EarthMesh->CastShadow = false;
+	EarthMesh->bOverrideWireframeColor = true;
+	EarthMesh->WireframeColorOverride = FColor(50, 100, 255); // blue
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMeshFinder(
 		TEXT("/Engine/BasicShapes/Sphere.Sphere"));
@@ -34,6 +36,8 @@ ADevVisualizationActor::ADevVisualizationActor()
 	RocketMesh->SetupAttachment(Root);
 	RocketMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	RocketMesh->CastShadow = false;
+	RocketMesh->bOverrideWireframeColor = true;
+	RocketMesh->WireframeColorOverride = FColor(255, 120, 30); // orange
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderMeshFinder(
 		TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));

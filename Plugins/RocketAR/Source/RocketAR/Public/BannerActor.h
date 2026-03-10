@@ -39,7 +39,8 @@ public:
 		const FFlightEventData& InEventData,
 		float InWidth,
 		float InHeight,
-		bool bUseOpaqueMaterial = false);
+		bool bUseOpaqueMaterial = false,
+		FColor InWireframeColor = FColor(255, 255, 0));
 
 	/** Initialize slide motion (call after InitBanner) */
 	void InitSlide(float InSlideSpeed);

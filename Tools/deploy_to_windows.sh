@@ -48,6 +48,12 @@ cp "$REPO_ROOT/Plugins/RocketAR/Source/RocketAR/Public/"*.h "$DEST/Plugins/Rocke
 cp "$REPO_ROOT/Plugins/RocketAR/Source/RocketAR/Private/"*.cpp "$DEST/Plugins/RocketAR/Source/RocketAR/Private/"
 cp "$REPO_ROOT/Plugins/RocketAR/Source/RocketAR/Private/Tests/"*.cpp "$DEST/Plugins/RocketAR/Source/RocketAR/Private/Tests/"
 
+# Editor module
+mkdir -p "$DEST/Plugins/RocketAR/Source/RocketAREditor/Private"
+cp "$REPO_ROOT/Plugins/RocketAR/Source/RocketAREditor/RocketAREditor.Build.cs" "$DEST/Plugins/RocketAR/Source/RocketAREditor/"
+cp "$REPO_ROOT/Plugins/RocketAR/Source/RocketAREditor/Private/"*.cpp "$DEST/Plugins/RocketAR/Source/RocketAREditor/Private/"
+cp "$REPO_ROOT/Plugins/RocketAR/Source/RocketAREditor/Private/"*.h "$DEST/Plugins/RocketAR/Source/RocketAREditor/Private/"
+
 # Content (CSV test data)
 mkdir -p "$DEST/Content/Data"
 cp "$REPO_ROOT/Content/Data/SimulatedTelemetry.csv" "$DEST/Content/Data/"

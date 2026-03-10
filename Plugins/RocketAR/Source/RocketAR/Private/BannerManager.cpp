@@ -115,13 +115,16 @@ ABannerActor* UBannerManager::SpawnBannerFromQueue(const FPendingBanner& Pending
 	Banner->TextWorldSize = bIsMarker ? MarkerTextSize : BannerTextSize;
 	Banner->TextOffset = bIsMarker ? MarkerTextOffset : BannerTextOffset;
 
+	const FColor WireframeColor = bIsMarker ? FColor(0, 200, 255) : FColor(255, 255, 0);
+
 	Banner->InitBanner(
 		Pending.EventData,
 		Width,
 		Height,
-		bDevOpaqueBanners);
+		bDevOpaqueBanners,
+		WireframeColor);
 
-	// Set marker color if this is an altitude marker
+	// Set marker color tint
 	if (bIsMarker)
 	{
 		Banner->SetBannerColor(MarkerColor);

@@ -59,7 +59,6 @@ ABannerActor::ABannerActor()
 	BannerMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	BannerMesh->CastShadow = false;
 	BannerMesh->bCastDynamicShadow = false;
-
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> PlaneFinder(
 		TEXT("/Engine/BasicShapes/Plane.Plane"));
 	if (PlaneFinder.Succeeded())
@@ -99,7 +98,8 @@ void ABannerActor::InitBanner(
 	const FFlightEventData& InEventData,
 	float InWidth,
 	float InHeight,
-	bool bUseOpaqueMaterial)
+	bool bUseOpaqueMaterial,
+	FColor InWireframeColor)
 {
 	EventData = InEventData;
 
@@ -149,6 +149,10 @@ void ABannerActor::InitBanner(
 		// Rotate text to lie in the XY plane facing -Z (toward camera behind rocket)
 		TextComponent->SetRelativeRotation(FRotator(90.0f, 0.0f, 0.0f));
 	}
+
+	// Set wireframe color AFTER material setup so SetMaterial doesn't reset it
+	BannerMesh->bOverrideWireframeColor = true;
+	BannerMesh->WireframeColorOverride = InWireframeColor;
 
 	// Start in spawn animation state (opacity fade-in)
 	State = EBannerState::SpawnAnimation;
