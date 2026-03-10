@@ -1,26 +1,32 @@
 #include "BannerActor.h"
-#include "ProceduralArcMesh.h"
 #include "RocketARModule.h"
-#include "ProceduralMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/CanvasRenderTarget2D.h"
 #include "Engine/Canvas.h"
 #include "CanvasItem.h"
 #include "Engine/Font.h"
-#include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetRenderingLibrary.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "UObject/ConstructorHelpers.h"
 
 ABannerActor::ABannerActor()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	MeshComponent = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("BannerMesh"));
-	MeshComponent->bCastDynamicShadow = false;
-	MeshComponent->CastShadow = false;
-	MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	MeshComponent->SetCullDistance(0); // Never distance-cull
-	MeshComponent->bUseAsOccluder = false;
-	RootComponent = MeshComponent;
+	// Same cylinder mesh the rocket and old event disks use
+	DiskMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("DiskMesh"));
+	DiskMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	DiskMesh->CastShadow = false;
+	DiskMesh->bCastDynamicShadow = false;
+	RootComponent = DiskMesh;
+
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderFinder(
+		TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	if (CylinderFinder.Succeeded())
+	{
+		DiskMesh->SetStaticMesh(CylinderFinder.Object);
+	}
 }
 
 void ABannerActor::BeginPlay()
@@ -29,32 +35,34 @@ void ABannerActor::BeginPlay()
 	SpawnTime = GetWorld()->GetTimeSeconds();
 }
 
+void ABannerActor::InitSlide(float InSlideSpeed)
+{
+	SlideSpeed = InSlideSpeed;
+}
+
+void ABannerActor::SetDiskColor(const FLinearColor& Color)
+{
+	if (DynamicMaterial)
+	{
+		DynamicMaterial->SetVectorParameterValue(TEXT("Color"), Color);
+	}
+}
+
 void ABannerActor::InitBanner(
 	const FFlightEventData& InEventData,
-	float ArcAngleDeg,
-	float ArcRadius,
-	float ArcHeight,
-	int32 ArcSegments,
+	float DiskRadius,
+	float DiskThickness,
 	UMaterialInterface* BannerMaterial,
 	UFont* TextFont)
 {
 	EventData = InEventData;
-	ECEFPosition = InEventData.ECEFPosition;
 	BannerFont = TextFont;
 
-	// Generate arc mesh
-	TArray<FVector> Vertices;
-	TArray<FVector2D> UVs;
-	TArray<int32> Triangles;
-	TArray<FVector> Normals;
-	TArray<FProcMeshTangent> Tangents;
-
-	UProceduralArcMesh::GenerateArcMesh(
-		ArcAngleDeg, ArcRadius, ArcHeight, ArcSegments,
-		Vertices, UVs, Triangles, Normals, Tangents);
-
-	MeshComponent->CreateMeshSection(0, Vertices, Triangles, Normals,
-		UVs, TArray<FColor>(), Tangents, false);
+	// Default cylinder is 100cm diameter (50cm radius), 100cm tall.
+	// Scale to desired disk dimensions.
+	const float RadiusScale = DiskRadius / 50.0f;
+	const float HeightScale = DiskThickness / 100.0f;
+	DiskMesh->SetRelativeScale3D(FVector(RadiusScale, RadiusScale, HeightScale));
 
 	// Create render target for text
 	RenderTarget = UCanvasRenderTarget2D::CreateCanvasRenderTarget2D(
@@ -66,28 +74,28 @@ void ABannerActor::InitBanner(
 		RenderTextToTarget();
 	}
 
-	// Always use bright opaque material for now (debug visibility)
+	// Bright debug material (same as rocket/disks)
+	UMaterialInterface* BaseMat = LoadObject<UMaterialInterface>(nullptr,
+		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+	if (BaseMat)
 	{
-		UMaterialInterface* BaseMat = LoadObject<UMaterialInterface>(nullptr,
-			TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
-		if (BaseMat)
+		DynamicMaterial = UMaterialInstanceDynamic::Create(BaseMat, this);
+		if (DynamicMaterial)
 		{
-			DynamicMaterial = UMaterialInstanceDynamic::Create(BaseMat, this);
-			if (DynamicMaterial)
-			{
-				DynamicMaterial->SetVectorParameterValue(TEXT("Color"), FLinearColor(1.0f, 1.0f, 0.0f, 1.0f));
-				MeshComponent->SetMaterial(0, DynamicMaterial);
-			}
+			DynamicMaterial->SetVectorParameterValue(TEXT("Color"), FLinearColor(1.0f, 1.0f, 0.0f, 1.0f));
+			DiskMesh->SetMaterial(0, DynamicMaterial);
 		}
-		UE_LOG(LogRocketAR, Log, TEXT("Banner: using bright yellow debug material"));
 	}
 
-	// Skip spawn animation for now — start fully visible for debugging
-	State = EBannerState::Active;
-	SetActorScale3D(FVector::OneVector);
+	// Start in spawn animation state (opacity fade-in)
+	State = EBannerState::SpawnAnimation;
+	if (DynamicMaterial)
+	{
+		DynamicMaterial->SetScalarParameterValue(TEXT("Opacity"), 0.0f);
+	}
 
-	UE_LOG(LogRocketAR, Log, TEXT("Banner initialized: '%s' at (%.0f, %.0f, %.0f)"),
-		*EventData.EventLabel, GetActorLocation().X, GetActorLocation().Y, GetActorLocation().Z);
+	UE_LOG(LogRocketAR, Log, TEXT("Banner initialized: '%s' radius=%.0f thickness=%.0f"),
+		*EventData.EventLabel, DiskRadius, DiskThickness);
 }
 
 void ABannerActor::RenderTextToTarget()
@@ -106,14 +114,11 @@ void ABannerActor::RenderTextToTarget()
 	{
 		const FString& Text = EventData.EventLabel;
 		const float FontScale = 2.5f;
-
-		// Approximate text dimensions for centering
 		const float TextWidth = Text.Len() * 20.0f * FontScale;
 		const float TextHeight = 32.0f * FontScale;
 		const float X = (Size.X - TextWidth) * 0.5f;
 		const float Y = (Size.Y - TextHeight) * 0.5f;
 
-		// Draw text using FCanvasTextItem for reliable cross-version compatibility
 		FCanvasTextItem TextItem(FVector2D(X, Y), FText::FromString(Text), BannerFont, FLinearColor::White);
 		TextItem.Scale = FVector2D(FontScale, FontScale);
 		TextItem.bCentreX = false;
@@ -129,6 +134,12 @@ void ABannerActor::RenderTextToTarget()
 void ABannerActor::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	// Slide along local -Z (toward exhaust). Same axis as the rocket cylinder height.
+	if (State != EBannerState::Destroyed && SlideSpeed > 0.0f)
+	{
+		AddActorLocalOffset(FVector(0.0f, 0.0f, -SlideSpeed * DeltaTime));
+	}
 
 	switch (State)
 	{
@@ -152,43 +163,23 @@ void ABannerActor::Tick(float DeltaTime)
 		Destroy();
 		return;
 	}
-
-	// Rotation set once at spawn via SetTrajectoryRotation — no per-frame update
 }
 
 void ABannerActor::UpdateSpawnAnimation(float DeltaTime)
 {
 	SpawnAnimTime += DeltaTime;
 
-	float Scale;
-	const float TotalDuration = SpawnOvershootDuration + SpawnSettleDuration;
+	const float Duration = FMath::Max(FadeInDuration, 0.01f);
+	const float Alpha = FMath::Clamp(SpawnAnimTime / Duration, 0.0f, 1.0f);
 
-	if (SpawnAnimTime < SpawnOvershootDuration)
-	{
-		// Phase 1: Scale from 0 to overshoot (1.1)
-		const float T = SpawnAnimTime / SpawnOvershootDuration;
-		// Ease-out quadratic
-		Scale = SpawnOvershootScale * (1.0f - (1.0f - T) * (1.0f - T));
-	}
-	else if (SpawnAnimTime < TotalDuration)
-	{
-		// Phase 2: Settle from overshoot to 1.0
-		const float T = (SpawnAnimTime - SpawnOvershootDuration) / SpawnSettleDuration;
-		Scale = FMath::Lerp(SpawnOvershootScale, 1.0f, T);
-	}
-	else
-	{
-		Scale = 1.0f;
-		State = EBannerState::Active;
-	}
-
-	SetActorScale3D(FVector(Scale));
-
-	// Also ramp opacity during spawn
 	if (DynamicMaterial)
 	{
-		const float OpacityT = FMath::Clamp(SpawnAnimTime / SpawnOvershootDuration, 0.0f, 1.0f);
-		DynamicMaterial->SetScalarParameterValue(TEXT("Opacity"), OpacityT);
+		DynamicMaterial->SetScalarParameterValue(TEXT("Opacity"), Alpha);
+	}
+
+	if (SpawnAnimTime >= Duration)
+	{
+		State = EBannerState::Active;
 	}
 }
 
@@ -212,16 +203,6 @@ void ABannerActor::UpdateFadeOut(float DeltaTime)
 	{
 		State = EBannerState::Destroyed;
 	}
-}
-
-void ABannerActor::SetTrajectoryRotation(const FVector& Trajectory)
-{
-	if (Trajectory.IsNearlyZero()) return;
-
-	const FRotator TrajRot = Trajectory.Rotation();
-	FRotator FinalRot(0.0f, TrajRot.Yaw - 90.0f, 0.0f);
-	FinalRot += BannerRotationOffset;
-	SetActorRotation(FinalRot);
 }
 
 void ABannerActor::StartFadeOut()

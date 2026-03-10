@@ -32,10 +32,37 @@ void UBannerManager::SetEventDetector(UFlightEventDetector* Detector)
 
 void UBannerManager::OnFlightEventDetected(const FFlightEventData& EventData)
 {
-	SpawnBanner(EventData);
+	QueueBanner(EventData, LastVehicleUEVelocity);
+}
+
+void UBannerManager::QueueBanner(const FFlightEventData& EventData, const FVector& TrajectoryAtTrigger)
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	FPendingBanner Pending;
+	Pending.EventData = EventData;
+	Pending.TrajectoryAtTrigger = TrajectoryAtTrigger;
+	Pending.SpawnPosition = LastVehicleUEPosition;
+	Pending.TriggerWorldTime = World->GetTimeSeconds() + TriggerTimeOffset;
+
+	PendingBanners.Add(Pending);
+
+	UE_LOG(LogRocketAR, Log, TEXT("BannerManager: Queued banner '%s' (offset=%.2fs)"),
+		*EventData.EventLabel, TriggerTimeOffset);
 }
 
 ABannerActor* UBannerManager::SpawnBanner(const FFlightEventData& EventData)
+{
+	// Immediate spawn (no queue delay) using current cached state
+	FPendingBanner Immediate;
+	Immediate.EventData = EventData;
+	Immediate.TrajectoryAtTrigger = LastVehicleUEVelocity;
+	Immediate.SpawnPosition = LastVehicleUEPosition;
+	return SpawnBannerFromQueue(Immediate);
+}
+
+ABannerActor* UBannerManager::SpawnBannerFromQueue(const FPendingBanner& Pending)
 {
 	UWorld* World = GetWorld();
 	if (!World) return nullptr;
@@ -46,13 +73,13 @@ ABannerActor* UBannerManager::SpawnBanner(const FFlightEventData& EventData)
 		CullOldestBanner();
 	}
 
-	// Spawn the banner actor
+	// Spawn at world origin, then attach to rocket mount point
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
 	ABannerActor* Banner = World->SpawnActor<ABannerActor>(
 		BannerActorClass ? BannerActorClass.Get() : ABannerActor::StaticClass(),
-		LastVehicleUEPosition, FRotator::ZeroRotator, SpawnParams);
+		FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
 
 	if (!Banner)
 	{
@@ -60,44 +87,60 @@ ABannerActor* UBannerManager::SpawnBanner(const FFlightEventData& EventData)
 		return nullptr;
 	}
 
-	Banner->LifetimeSeconds = BannerLifetimeSeconds;
+	// Attach to rocket mount point — banner moves with the rocket
+	if (AttachTarget)
+	{
+		Banner->AttachToComponent(AttachTarget, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+		// Local position = zero (at rocket center), local rotation = zero (flat disk)
+		Banner->SetActorRelativeLocation(FVector::ZeroVector);
+		Banner->SetActorRelativeRotation(FRotator::ZeroRotator);
+	}
+	else
+	{
+		// Fallback: no parent, spawn at cached position
+		Banner->SetActorLocation(Pending.SpawnPosition);
+	}
+
+	Banner->LifetimeSeconds = SlideDuration;
 	Banner->FadeOutDuration = BannerFadeOutDuration;
+	Banner->FadeInDuration = FadeInDuration;
+
+	// Use different geometry for altitude markers vs event banners
+	const bool bIsMarker = (Pending.EventData.EventType == EFlightEvent::AltitudeMarker);
+	const float Radius = bIsMarker ? MarkerDiskRadius : BannerDiskRadius;
+	const float Thickness = bIsMarker ? MarkerDiskThickness : BannerDiskThickness;
 
 	Banner->InitBanner(
-		EventData,
-		BannerArcAngle,
-		BannerArcRadius,
-		BannerArcHeight,
-		BannerArcSegments,
+		Pending.EventData,
+		Radius,
+		Thickness,
 		BannerMaterial,
 		BannerFont);
+
+	// Set marker color if this is an altitude marker
+	if (bIsMarker)
+	{
+		Banner->SetDiskColor(MarkerColor);
+	}
+
+	Banner->InitSlide(SlideSpeed);
 
 	ActiveBanners.Add(Banner);
 	SET_DWORD_STAT(STAT_ActiveBanners, ActiveBanners.Num());
 
-	UE_LOG(LogRocketAR, Log, TEXT("BannerManager: Spawned banner '%s' at (%.0f, %.0f, %.0f) mat=%s (total: %d)"),
-		*EventData.EventLabel,
-		LastVehicleUEPosition.X, LastVehicleUEPosition.Y, LastVehicleUEPosition.Z,
-		BannerMaterial ? *BannerMaterial->GetName() : TEXT("NULL"),
-		ActiveBanners.Num());
+	UE_LOG(LogRocketAR, Log, TEXT("BannerManager: Spawned banner '%s' at (%.0f, %.0f, %.0f) slide=%.0f cm/s (total: %d)"),
+		*Pending.EventData.EventLabel,
+		Pending.SpawnPosition.X, Pending.SpawnPosition.Y, Pending.SpawnPosition.Z,
+		SlideSpeed, ActiveBanners.Num());
 
 	if (GEngine)
 	{
 		GEngine->AddOnScreenDebugMessage(-1, 10.0f, FColor::Yellow,
 			FString::Printf(TEXT("BANNER: %s at (%.0f, %.0f, %.0f)"),
-				*EventData.EventLabel,
-				LastVehicleUEPosition.X, LastVehicleUEPosition.Y, LastVehicleUEPosition.Z));
+				*Pending.EventData.EventLabel,
+				Pending.SpawnPosition.X, Pending.SpawnPosition.Y, Pending.SpawnPosition.Z));
 	}
 
-	return Banner;
-}
-
-ABannerActor* UBannerManager::SpawnBannerAtPosition(const FFlightEventData& EventData, const FVector& UEPosition)
-{
-	FVector SavedPos = LastVehicleUEPosition;
-	LastVehicleUEPosition = UEPosition;
-	ABannerActor* Banner = SpawnBanner(EventData);
-	LastVehicleUEPosition = SavedPos;
 	return Banner;
 }
 
@@ -105,6 +148,22 @@ void UBannerManager::TickComponent(float DeltaTime, ELevelTick TickType,
 	FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	// Process pending queue: spawn banners whose trigger time has elapsed
+	UWorld* World = GetWorld();
+	if (World)
+	{
+		const double Now = World->GetTimeSeconds();
+		for (int32 i = PendingBanners.Num() - 1; i >= 0; --i)
+		{
+			if (Now >= PendingBanners[i].TriggerWorldTime)
+			{
+				SpawnBannerFromQueue(PendingBanners[i]);
+				PendingBanners.RemoveAt(i);
+			}
+		}
+	}
+
 	CleanupDestroyedBanners();
 	SET_DWORD_STAT(STAT_ActiveBanners, ActiveBanners.Num());
 }
@@ -154,5 +213,6 @@ void UBannerManager::DestroyAllBanners()
 		}
 	}
 	ActiveBanners.Empty();
+	PendingBanners.Empty();
 	UE_LOG(LogRocketAR, Log, TEXT("BannerManager: All banners destroyed"));
 }

@@ -15,7 +15,6 @@ class ACesiumGeoreference;
 class ACineCameraActor;
 class ACSVTelemetryProvider;
 class ABannerActor;
-class AAltitudeMarkerActor;
 class ADevVisualizationActor;
 class ARocketARHUD;
 
@@ -99,30 +98,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta=(ClampMin="1.0", ClampMax="180.0"))
 	float CameraHFOV = 110.0f;
 
-	// --- Banner Configuration (flight events only) ---
+	// --- Banner Configuration ---
 
+	/** Disk radius in cm */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
-	float BannerArcRadius = 10000.0f;
+	float BannerDiskRadius = 5000.0f; // cm (50m)
 
+	/** Disk thickness in cm */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
-	float BannerArcAngle = 120.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
-	float BannerArcHeight = 5000.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
-	float BannerLifetimeSeconds = 30.0f;
+	float BannerDiskThickness = 100.0f; // cm (1m)
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
 	int32 MaxActiveBanners = 20;
-
-	/** Seconds ahead to place banner using current velocity (rocket flies into it) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
-	float BannerLeadTimeSeconds = 3.0f;
-
-	/** Additional rotation offset for banners (degrees) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
-	FRotator BannerRotationOffset = FRotator::ZeroRotator;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
 	UMaterialInterface* BannerMaterial = nullptr;
@@ -130,40 +117,49 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
 	UFont* BannerFont = nullptr;
 
+	// --- Banner Slide Configuration ---
+
+	/** Delay (seconds) between event detection and banner spawn */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner|Slide")
+	float TriggerTimeOffset = 0.0f;
+
+	/** Constant velocity of slide in cm/s (50 m/s default) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner|Slide")
+	float SlideSpeed = 5000.0f;
+
+	/** Time banner slides before fade begins */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner|Slide")
+	float SlideDuration = 10.0f;
+
+	/** Opacity ramp-up time at spawn */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner|Slide")
+	float BannerFadeInDuration = 0.3f;
+
 	// --- Altitude Marker Configuration ---
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Marker")
-	bool bShowAltitudeMarkers = true;
+	bool bShowAltitudeMarkers = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Marker")
-	float MarkerArcRadius = 8000.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Marker")
-	float MarkerArcAngle = 90.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Marker")
-	float MarkerArcHeight = 3000.0f;
-
+	/** Altitude interval between markers (meters). 1000km = 1000000. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Marker")
 	float AltitudeMarkerInterval = 10000.0f;
 
-	/** Additional rotation offset for altitude markers (degrees) */
+	/** Altitude marker disk radius in cm (smaller than event banners) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Marker")
-	FRotator MarkerRotationOffset = FRotator::ZeroRotator;
+	float MarkerDiskRadius = 2000.0f; // cm (20m)
 
+	/** Altitude marker disk thickness in cm */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Marker")
-	UMaterialInterface* MarkerMaterial = nullptr;
+	float MarkerDiskThickness = 50.0f; // cm (0.5m)
 
+	/** Altitude marker color */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Marker")
-	UFont* MarkerFont = nullptr;
+	FLinearColor MarkerColor = FLinearColor(0.2f, 0.8f, 1.0f, 1.0f); // cyan
 
 	// --- Dev / Debug ---
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev")
 	bool bDevVisualization = true;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev")
-	bool bShowEventDisks = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev")
 	bool bShowHUD = true;
@@ -242,16 +238,6 @@ private:
 	FQuat LastVehicleUERotation = FQuat::Identity;
 	double LastAltitudeASL = 0.0;
 	double LastVerticalVelocity = 0.0;
-
-	/** Pre-placed altitude banners: altitude (m) → banner actor */
-	TMap<double, AAltitudeMarkerActor*> PrePlacedAltitudeMarkers;
-	double HighestPrePlacedAlt = 0.0;
-
-	/** How many altitude markers ahead to pre-place */
-	static constexpr int32 PrePlaceLookAheadCount = 5;
-
-	void UpdatePrePlacedBanners();
-	bool IsAltitudeBasedEvent(EFlightEvent EventType) const;
 
 	UPROPERTY()
 	UFlightEventDetector* EventDetector = nullptr;

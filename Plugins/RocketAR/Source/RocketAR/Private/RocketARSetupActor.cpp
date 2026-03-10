@@ -8,7 +8,6 @@
 #include "RocketARModule.h"
 #include "RocketARHUD.h"
 #include "BannerActor.h"
-#include "AltitudeMarkerActor.h"
 #include "CineCameraActor.h"
 #include "Engine/DirectionalLight.h"
 #include "Components/DirectionalLightComponent.h"
@@ -52,10 +51,17 @@ void ARocketARSetupActor::BeginPlay()
 
 	SetupDevVisualization();
 
-	// Attach camera to unscaled rocket mount point so it moves rigidly with the rocket
-	if (CameraManager && DevVisActor && DevVisActor->GetRocketMountPoint())
+	// Attach camera and banners to unscaled rocket mount point so they move rigidly with the rocket
+	if (DevVisActor && DevVisActor->GetRocketMountPoint())
 	{
-		CameraManager->AttachToComponent(DevVisActor->GetRocketMountPoint());
+		if (CameraManager)
+		{
+			CameraManager->AttachToComponent(DevVisActor->GetRocketMountPoint());
+		}
+		if (BannerManager)
+		{
+			BannerManager->SetAttachTarget(DevVisActor->GetRocketMountPoint());
+		}
 	}
 
 	WireSubsystems();
@@ -268,7 +274,7 @@ void ARocketARSetupActor::SetupFreezeFrame()
 		BannerManager->UpdateVehiclePosition(RocketUEPos);
 	}
 
-	// Spawn a test banner
+	// Spawn a test banner with SlideSpeed=0 so it stays in frame for visual tuning
 	FFlightEventData TestEvent;
 	TestEvent.EventType = EFlightEvent::MaxQ;
 	TestEvent.EventLabel = FreezeFrameEventLabel;
@@ -278,41 +284,12 @@ void ARocketARSetupActor::SetupFreezeFrame()
 
 	if (BannerManager)
 	{
+		// Temporarily set slide speed to 0 for freeze-frame test banner
+		const float SavedSlideSpeed = BannerManager->SlideSpeed;
+		BannerManager->SlideSpeed = 0.0f;
 		ABannerActor* TestBanner = BannerManager->SpawnBanner(TestEvent);
-		if (TestBanner)
-		{
-			TestBanner->BannerRotationOffset = BannerRotationOffset;
-			TestBanner->SetTrajectoryRotation(FVector(0, 0, 1)); // Straight up for freeze frame
-		}
-	}
-
-	// Spawn a test altitude marker below the rocket
-	if (bShowAltitudeMarkers)
-	{
-		const FVector MarkerPos = RocketUEPos - FVector(0.0, 0.0, 500000.0); // 5km below
-		const double MarkerAlt = FreezeFrameAltitude - 5000.0;
-		FString MarkerLabel = FString::Printf(TEXT("%.0f km"), MarkerAlt / 1000.0);
-
-		FActorSpawnParameters MarkerSpawnParams;
-		MarkerSpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		AAltitudeMarkerActor* TestMarker = GetWorld()->SpawnActor<AAltitudeMarkerActor>(
-			AAltitudeMarkerActor::StaticClass(), MarkerPos, FRotator::ZeroRotator, MarkerSpawnParams);
-		if (TestMarker)
-		{
-			TestMarker->InitMarker(MarkerLabel, MarkerAlt,
-				MarkerArcAngle, MarkerArcRadius, MarkerArcHeight, 32,
-				MarkerMaterial, MarkerFont);
-			TestMarker->LifetimeSeconds = 0.0f;
-			TestMarker->MarkerRotationOffset = MarkerRotationOffset;
-			TestMarker->SetTrajectoryRotation(FVector(0, 0, 1)); // Straight up
-			PrePlacedAltitudeMarkers.Add(MarkerAlt, TestMarker);
-		}
-	}
-
-	// Also fire the event disk if enabled
-	if (DevVisActor && bDevVisualization && bShowEventDisks)
-	{
-		DevVisActor->SpawnEventDisk(RocketUEPos, FQuat::Identity, FreezeFrameEventLabel);
+		BannerManager->SlideSpeed = SavedSlideSpeed;
+		// Banner is parented to rocket — no extra rotation needed
 	}
 
 	// Update HUD
@@ -354,22 +331,38 @@ void ARocketARSetupActor::WireSubsystems()
 		UE_LOG(LogRocketAR, Error, TEXT("TelemetrySubsystem not found!"));
 	}
 
-	// Configure banner manager (setup actor handles event→banner spawning, not BannerManager directly)
+	// Configure banner manager
 	if (BannerManager)
 	{
-		BannerManager->BannerArcRadius = BannerArcRadius;
-		BannerManager->BannerArcAngle = BannerArcAngle;
-		BannerManager->BannerArcHeight = BannerArcHeight;
-		BannerManager->BannerLifetimeSeconds = BannerLifetimeSeconds;
+		BannerManager->BannerDiskRadius = BannerDiskRadius;
+		BannerManager->BannerDiskThickness = BannerDiskThickness;
 		BannerManager->MaxActiveBanners = MaxActiveBanners;
 		BannerManager->BannerMaterial = BannerMaterial;
 		BannerManager->BannerFont = BannerFont;
+		BannerManager->TriggerTimeOffset = TriggerTimeOffset;
+		BannerManager->SlideSpeed = SlideSpeed;
+		BannerManager->SlideDuration = SlideDuration;
+		BannerManager->FadeInDuration = BannerFadeInDuration;
 	}
 
-	// Wire event detector — setup actor is sole handler for event→banner/disk/HUD
+	// Wire event detector — setup actor is sole handler for event→banner/HUD
 	if (EventDetector)
 	{
 		EventDetector->OnFlightEvent.AddDynamic(this, &ARocketARSetupActor::OnFlightEventDetected);
+	}
+
+	// Sync marker geometry to banner manager
+	if (BannerManager)
+	{
+		BannerManager->MarkerDiskRadius = MarkerDiskRadius;
+		BannerManager->MarkerDiskThickness = MarkerDiskThickness;
+		BannerManager->MarkerColor = MarkerColor;
+	}
+
+	// Sync altitude marker interval
+	if (EventDetector)
+	{
+		EventDetector->Config.AltitudeMarkerInterval = AltitudeMarkerInterval;
 	}
 }
 
@@ -404,13 +397,11 @@ void ARocketARSetupActor::OnTelemetryUpdated(const FProcessedTelemetryData& Data
 	}
 	PrevUEPosition = Data.UEPosition;
 
-	// Update pre-placed altitude banners along current trajectory
-	UpdatePrePlacedBanners();
-
-	// Update banner manager with current position
+	// Update banner manager with current position and velocity
 	if (BannerManager)
 	{
 		BannerManager->UpdateVehiclePosition(Data.UEPosition);
+		BannerManager->UpdateVehicleVelocity(LastVehicleUEVelocity);
 	}
 
 	// Feed processed telemetry to event detector
@@ -472,13 +463,29 @@ void ARocketARSetupActor::Tick(float DeltaTime)
 	// Live-sync banner config so new banners use current values
 	if (BannerManager)
 	{
-		BannerManager->BannerArcRadius = BannerArcRadius;
-		BannerManager->BannerArcAngle = BannerArcAngle;
-		BannerManager->BannerArcHeight = BannerArcHeight;
-		BannerManager->BannerLifetimeSeconds = BannerLifetimeSeconds;
+		BannerManager->BannerDiskRadius = BannerDiskRadius;
+		BannerManager->BannerDiskThickness = BannerDiskThickness;
 		BannerManager->MaxActiveBanners = MaxActiveBanners;
 		BannerManager->BannerMaterial = BannerMaterial;
 		BannerManager->BannerFont = BannerFont;
+		BannerManager->TriggerTimeOffset = TriggerTimeOffset;
+		BannerManager->SlideSpeed = SlideSpeed;
+		BannerManager->SlideDuration = SlideDuration;
+		BannerManager->FadeInDuration = BannerFadeInDuration;
+	}
+
+	// Live-sync marker geometry
+	if (BannerManager)
+	{
+		BannerManager->MarkerDiskRadius = MarkerDiskRadius;
+		BannerManager->MarkerDiskThickness = MarkerDiskThickness;
+		BannerManager->MarkerColor = MarkerColor;
+	}
+
+	// Live-sync altitude marker interval to event config
+	if (EventDetector)
+	{
+		EventDetector->Config.AltitudeMarkerInterval = AltitudeMarkerInterval;
 	}
 
 	// Toggle dev visualization when the bool changes
@@ -492,14 +499,7 @@ void ARocketARSetupActor::Tick(float DeltaTime)
 	if (bFreezeFrameMode &&
 		(FreezeFrameAltitude != FreezeFrameAltitudeLast || FreezeFrameEventLabel != FreezeFrameEventLabelLast))
 	{
-		// Clear old test banners, markers, and disks
 		if (BannerManager) BannerManager->DestroyAllBanners();
-		for (auto& Pair : PrePlacedAltitudeMarkers)
-		{
-			if (Pair.Value && IsValid(Pair.Value)) Pair.Value->ForceDestroy();
-		}
-		PrePlacedAltitudeMarkers.Empty();
-		if (DevVisActor) DevVisActor->ClearEventDisks();
 
 		SetupFreezeFrame();
 		FreezeFrameAltitudeLast = FreezeFrameAltitude;
@@ -567,7 +567,7 @@ int32 ARocketARSetupActor::GetProviderPriority_Implementation() const
 
 void ARocketARSetupActor::OnFlightEventDetected(const FFlightEventData& EventData)
 {
-	// Skip altitude markers entirely when disabled
+	// Skip altitude markers when disabled
 	if (EventData.EventType == EFlightEvent::AltitudeMarker && !bShowAltitudeMarkers)
 	{
 		return;
@@ -576,130 +576,16 @@ void ARocketARSetupActor::OnFlightEventDetected(const FFlightEventData& EventDat
 	UE_LOG(LogRocketAR, Log, TEXT("Flight event: %s at MET=%.1f, Alt=%.0fm"),
 		*EventData.EventLabel, EventData.MET, EventData.Altitude);
 
-	// Spawn banner at predicted position (velocity * lead time ahead of current position)
-	if (EventData.EventType != EFlightEvent::AltitudeMarker)
+	// All events (including altitude markers) go through the unified banner pipeline
+	if (BannerManager)
 	{
-		FVector SpawnPosition = LastVehicleUEPosition;
-		if (BannerLeadTimeSeconds > 0.0f && !LastVehicleUEVelocity.IsNearlyZero())
-		{
-			SpawnPosition = LastVehicleUEPosition + LastVehicleUEVelocity * BannerLeadTimeSeconds;
-		}
-
-		if (DevVisActor && bDevVisualization && bShowEventDisks)
-		{
-			DevVisActor->SpawnEventDisk(SpawnPosition, LastVehicleUERotation, EventData.EventLabel);
-		}
-
-		if (BannerManager)
-		{
-			ABannerActor* Banner = BannerManager->SpawnBannerAtPosition(EventData, SpawnPosition);
-			if (Banner)
-			{
-				Banner->BannerRotationOffset = BannerRotationOffset;
-				Banner->SetTrajectoryRotation(LastVehicleUEVelocity);
-			}
-		}
+		BannerManager->QueueBanner(EventData, LastVehicleUEVelocity);
 	}
 
 	// Show event on HUD overlay
 	if (HUDOverlay && bShowHUD)
 	{
 		HUDOverlay->ShowEvent(EventData);
-	}
-}
-
-bool ARocketARSetupActor::IsAltitudeBasedEvent(EFlightEvent EventType) const
-{
-	return EventType == EFlightEvent::AltitudeMarker;
-}
-
-void ARocketARSetupActor::UpdatePrePlacedBanners()
-{
-	if (!bShowAltitudeMarkers) return;
-	if (LastVerticalVelocity <= 10.0) return; // Only during ascent with meaningful velocity
-	if (LastVehicleUEVelocity.IsNearlyZero()) return;
-
-	const float Interval = AltitudeMarkerInterval;
-	if (Interval <= 0.0f) return;
-
-	UWorld* World = GetWorld();
-	if (!World) return;
-
-	// Find the next N altitude markers above current altitude
-	const double NextMarkerBase = FMath::CeilToDouble(LastAltitudeASL / Interval) * Interval;
-
-	for (int32 i = 0; i < PrePlaceLookAheadCount; ++i)
-	{
-		const double MarkerAlt = NextMarkerBase + i * Interval;
-		if (MarkerAlt <= 0.0) continue;
-
-		// Already have a marker for this altitude — continuously update position and rotation
-		if (PrePlacedAltitudeMarkers.Contains(MarkerAlt))
-		{
-			AAltitudeMarkerActor* Existing = PrePlacedAltitudeMarkers[MarkerAlt];
-			if (Existing && IsValid(Existing))
-			{
-				const double TimeToReach = (MarkerAlt - LastAltitudeASL) / FMath::Max(LastVerticalVelocity, 1.0);
-				const FVector PredictedPos = LastVehicleUEPosition + LastVehicleUEVelocity * TimeToReach;
-				Existing->SetActorLocation(PredictedPos);
-				Existing->SetTrajectoryRotation(LastVehicleUEVelocity);
-			}
-			continue;
-		}
-
-		// Don't pre-place markers we've already passed
-		if (MarkerAlt <= LastAltitudeASL) continue;
-
-		// Predict position for this altitude marker
-		const double TimeToReach = (MarkerAlt - LastAltitudeASL) / FMath::Max(LastVerticalVelocity, 1.0);
-		const FVector PredictedPos = LastVehicleUEPosition + LastVehicleUEVelocity * TimeToReach;
-
-		// Format label
-		FString Label;
-		if (MarkerAlt >= 1000.0)
-		{
-			Label = FString::Printf(TEXT("%.0f km"), MarkerAlt / 1000.0);
-		}
-		else
-		{
-			Label = FString::Printf(TEXT("%.0f m"), MarkerAlt);
-		}
-
-		// Spawn altitude marker actor directly
-		FActorSpawnParameters SpawnParams;
-		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		AAltitudeMarkerActor* Marker = World->SpawnActor<AAltitudeMarkerActor>(
-			AAltitudeMarkerActor::StaticClass(), PredictedPos, FRotator::ZeroRotator, SpawnParams);
-
-		if (Marker)
-		{
-			Marker->InitMarker(Label, MarkerAlt,
-				MarkerArcAngle, MarkerArcRadius, MarkerArcHeight, 32,
-				MarkerMaterial, MarkerFont);
-			Marker->LifetimeSeconds = 0.0f; // We manage lifecycle, not auto-fade
-			Marker->MarkerRotationOffset = MarkerRotationOffset;
-			Marker->SetTrajectoryRotation(LastVehicleUEVelocity);
-
-			PrePlacedAltitudeMarkers.Add(MarkerAlt, Marker);
-
-			UE_LOG(LogRocketAR, Log, TEXT("Pre-placed altitude marker: %s at predicted pos (%.0f, %.0f, %.0f) T=%.1fs ahead"),
-				*Label, PredictedPos.X, PredictedPos.Y, PredictedPos.Z, TimeToReach);
-		}
-	}
-
-	// Lock markers the rocket has passed — stop updating, remove from tracking
-	// The marker actor stays in place at its last predicted position/rotation
-	TArray<double> ToLock;
-	for (auto& Pair : PrePlacedAltitudeMarkers)
-	{
-		if (Pair.Key <= LastAltitudeASL)
-		{
-			ToLock.Add(Pair.Key);
-		}
-	}
-	for (double Alt : ToLock)
-	{
-		PrePlacedAltitudeMarkers.Remove(Alt);
 	}
 }
 

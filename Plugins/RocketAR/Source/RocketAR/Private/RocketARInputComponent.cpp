@@ -128,10 +128,6 @@ void URocketARInputComponent::OnReset()
 	UBannerManager* Banners = SetupActor->GetBannerManager();
 	if (Banners) Banners->DestroyAllBanners();
 
-	// Clear event disks
-	ADevVisualizationActor* DevVis = SetupActor->GetDevVisActor();
-	if (DevVis) DevVis->ClearEventDisks();
-
 	UE_LOG(LogRocketAR, Log, TEXT("Input: Full Reset"));
 }
 

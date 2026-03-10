@@ -14,6 +14,18 @@ echo "Source: $REPO_ROOT"
 
 mkdir -p "$DEST"
 
+# Clean Intermediate and Binaries to force full recompile
+for CLEAN_DIR in \
+	"$DEST/Intermediate" \
+	"$DEST/Binaries" \
+	"$DEST/Plugins/RocketAR/Intermediate" \
+	"$DEST/Plugins/RocketAR/Binaries"; do
+	if [ -d "$CLEAN_DIR" ]; then
+		echo "Cleaning: $CLEAN_DIR"
+		rm -rf "$CLEAN_DIR"
+	fi
+done
+
 # --- UE project files ---
 cp "$REPO_ROOT/RocketAR.uproject" "$DEST/"
 

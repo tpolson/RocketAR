@@ -8,9 +8,21 @@
 class ABannerActor;
 class UFlightEventDetector;
 
+/** Pending banner waiting for trigger time offset to elapse */
+USTRUCT()
+struct FPendingBanner
+{
+	GENERATED_BODY()
+
+	FFlightEventData EventData;
+	FVector TrajectoryAtTrigger = FVector::ZeroVector;
+	FVector SpawnPosition = FVector::ZeroVector;
+	double TriggerWorldTime = 0.0;
+};
+
 /**
- * Manages banner lifecycle: spawning, positioning, culling.
- * Listens to FlightEventDetector for new events and spawns banners at ECEF positions.
+ * Manages banner lifecycle: spawning, slide motion, culling.
+ * Banners spawn at the rocket's position and slide away along the trajectory vector.
  */
 UCLASS(BlueprintType, meta=(BlueprintSpawnableComponent))
 class ROCKETAR_API UBannerManager : public UActorComponent
@@ -26,16 +38,21 @@ public:
 	/** Set the event detector to listen to */
 	void SetEventDetector(UFlightEventDetector* Detector);
 
-	/** Manually spawn a banner for an event */
+	/** Manually spawn a banner for an event (uses cached position/velocity) */
 	UFUNCTION(BlueprintCallable, Category = "Banner Manager")
 	ABannerActor* SpawnBanner(const FFlightEventData& EventData);
 
-	/** Spawn a banner at a specific UE world position */
-	UFUNCTION(BlueprintCallable, Category = "Banner Manager")
-	ABannerActor* SpawnBannerAtPosition(const FFlightEventData& EventData, const FVector& UEPosition);
+	/** Queue a banner for deferred spawn (respects TriggerTimeOffset) */
+	void QueueBanner(const FFlightEventData& EventData, const FVector& TrajectoryAtTrigger);
 
 	/** Update the cached vehicle UE position (called each telemetry frame) */
 	void UpdateVehiclePosition(const FVector& UEPosition) { LastVehicleUEPosition = UEPosition; }
+
+	/** Update the cached vehicle UE velocity (called each telemetry frame) */
+	void UpdateVehicleVelocity(const FVector& UEVelocity) { LastVehicleUEVelocity = UEVelocity; }
+
+	/** Set the component banners will be attached to (rocket mount point) */
+	void SetAttachTarget(USceneComponent* InTarget) { AttachTarget = InTarget; }
 
 	/** Destroy all active banners */
 	UFUNCTION(BlueprintCallable, Category = "Banner Manager")
@@ -46,21 +63,12 @@ public:
 	int32 GetActiveBannerCount() const { return ActiveBanners.Num(); }
 
 
-	// Configuration
+	// Geometry configuration
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config")
-	float BannerArcAngle = 120.0f;
+	float BannerDiskRadius = 5000.0f; // cm (50m)
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config")
-	float BannerArcRadius = 10000.0f; // cm (100m)
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config")
-	float BannerArcHeight = 5000.0f; // cm (50m)
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config")
-	int32 BannerArcSegments = 32;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config")
-	float BannerLifetimeSeconds = 30.0f;
+	float BannerDiskThickness = 100.0f; // cm (1m)
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config")
 	int32 MaxActiveBanners = 20;
@@ -80,10 +88,34 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config")
 	TSubclassOf<ABannerActor> BannerActorClass;
 
+	// Altitude marker geometry (distinct from event banners)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Marker")
+	float MarkerDiskRadius = 2000.0f; // cm (20m)
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Marker")
+	float MarkerDiskThickness = 50.0f; // cm (0.5m)
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Marker")
+	FLinearColor MarkerColor = FLinearColor(0.2f, 0.8f, 1.0f, 1.0f); // cyan
+
+	// Slide configuration
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Slide")
+	float TriggerTimeOffset = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Slide")
+	float SlideSpeed = 5000.0f; // cm/s (50 m/s)
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Slide")
+	float SlideDuration = 10.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Slide")
+	float FadeInDuration = 0.3f;
+
 private:
 	UFUNCTION()
 	void OnFlightEventDetected(const FFlightEventData& EventData);
 
+	ABannerActor* SpawnBannerFromQueue(const FPendingBanner& Pending);
 	void CullOldestBanner();
 	void CleanupDestroyedBanners();
 
@@ -93,5 +125,10 @@ private:
 	UPROPERTY()
 	UFlightEventDetector* EventDetector = nullptr;
 
+	TArray<FPendingBanner> PendingBanners;
 	FVector LastVehicleUEPosition = FVector::ZeroVector;
+
+	UPROPERTY()
+	USceneComponent* AttachTarget = nullptr;
+	FVector LastVehicleUEVelocity = FVector::ZeroVector;
 };

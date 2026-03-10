@@ -85,10 +85,19 @@ void ARocketARHUD::DrawHUD()
 
 void ARocketARHUD::ShowEvent(const FFlightEventData& EventData)
 {
-	CurrentEventName = FString::Printf(TEXT("%s  |  %s  |  %.0f m/s"),
-		*EventData.EventLabel,
-		*FormatAltitude(EventData.Altitude),
-		EventData.Velocity);
+	if (EventData.EventType == EFlightEvent::AltitudeMarker)
+	{
+		CurrentEventName = FString::Printf(TEXT("ALTITUDE  |  %s  |  %.0f m/s"),
+			*EventData.EventLabel,
+			EventData.Velocity);
+	}
+	else
+	{
+		CurrentEventName = FString::Printf(TEXT("%s  |  %s  |  %.0f m/s"),
+			*EventData.EventLabel,
+			*FormatAltitude(EventData.Altitude),
+			EventData.Velocity);
+	}
 	EventDisplayTimer = EventDisplayDuration;
 }
 

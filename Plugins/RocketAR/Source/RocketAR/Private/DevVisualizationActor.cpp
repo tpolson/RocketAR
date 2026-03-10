@@ -40,7 +40,6 @@ ADevVisualizationActor::ADevVisualizationActor()
 	if (CylinderMeshFinder.Succeeded())
 	{
 		RocketMesh->SetStaticMesh(CylinderMeshFinder.Object);
-		CylinderMeshAsset = CylinderMeshFinder.Object;
 	}
 }
 
@@ -144,77 +143,12 @@ void ADevVisualizationActor::SetEarthTransform(const FVector& CenterUE, const FV
 		PoleDir.X, PoleDir.Y, PoleDir.Z);
 }
 
-void ADevVisualizationActor::SpawnEventDisk(const FVector& UEPosition, const FQuat& UERotation, const FString& Label)
-{
-	if (!CylinderMeshAsset) return;
-
-	UStaticMeshComponent* Disk = NewObject<UStaticMeshComponent>(this);
-	Disk->SetStaticMesh(CylinderMeshAsset);
-	Disk->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	Disk->CastShadow = false;
-	Disk->AttachToComponent(RootComponent, FAttachmentTransformRules::KeepWorldTransform);
-	Disk->RegisterComponent();
-
-	// Rocket is 8m (800cm) diameter, radius = 400cm
-	// Disk is 4x radius = 1600cm radius = 3200cm diameter
-	// Default cylinder: 100cm diameter, 100cm tall
-	// Scale X,Y = 3200/100 = 32, Z = thin (1.0 → 100cm tall disk)
-	Disk->SetWorldScale3D(FVector(32.0, 32.0, 1.0));
-	Disk->SetWorldLocation(UEPosition);
-
-	// Align disk with current rocket orientation
-	Disk->SetWorldRotation(RocketOrientation.Rotator());
-
-	// Create or reuse disk material (green-ish, distinct from rocket orange)
-	if (!DiskMaterial)
-	{
-		UMaterialInterface* BaseMat = LoadObject<UMaterialInterface>(nullptr,
-			TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
-		if (BaseMat)
-		{
-			DiskMaterial = UMaterialInstanceDynamic::Create(BaseMat, this);
-			if (DiskMaterial)
-			{
-				DiskMaterial->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.2f, 1.0f, 0.3f, 1.0f));
-			}
-		}
-	}
-
-	if (DiskMaterial)
-	{
-		Disk->SetMaterial(0, DiskMaterial);
-	}
-
-	Disk->SetVisibility(bIsVisible);
-	EventDiskMeshes.Add(Disk);
-
-	UE_LOG(LogRocketAR, Log, TEXT("DevVisualization: Event disk spawned for '%s' (%d total)"),
-		*Label, EventDiskMeshes.Num());
-}
-
-void ADevVisualizationActor::ClearEventDisks()
-{
-	for (UStaticMeshComponent* Disk : EventDiskMeshes)
-	{
-		if (Disk)
-		{
-			Disk->DestroyComponent();
-		}
-	}
-	EventDiskMeshes.Empty();
-}
-
 void ADevVisualizationActor::SetVisible(bool bVisible)
 {
 	bIsVisible = bVisible;
 	SetActorHiddenInGame(!bVisible);
 	if (EarthMesh) EarthMesh->SetVisibility(bVisible);
 	if (RocketMesh) RocketMesh->SetVisibility(bVisible);
-
-	for (UStaticMeshComponent* Disk : EventDiskMeshes)
-	{
-		if (Disk) Disk->SetVisibility(bVisible);
-	}
 
 	UE_LOG(LogRocketAR, Log, TEXT("DevVisualization: %s"), bVisible ? TEXT("Visible") : TEXT("Hidden"));
 }

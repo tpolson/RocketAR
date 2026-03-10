@@ -5,7 +5,7 @@
 #include "FlightEventTypes.h"
 #include "BannerActor.generated.h"
 
-class UProceduralMeshComponent;
+class UStaticMeshComponent;
 class UCanvasRenderTarget2D;
 class UMaterialInstanceDynamic;
 
@@ -19,9 +19,8 @@ enum class EBannerState : uint8
 };
 
 /**
- * A single banner actor: cylindrical arc mesh with curved text.
- * Positioned at an Earth-fixed ECEF location (converted to UE each frame via Cesium).
- * Camera-facing orientation constrained to local horizontal plane.
+ * Banner actor: flat disk (squished cylinder) parented to the rocket.
+ * Slides along the rocket's local -Z axis (toward exhaust).
  */
 UCLASS(BlueprintType)
 class ROCKETAR_API ABannerActor : public AActor
@@ -34,15 +33,19 @@ public:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
 
-	/** Initialize the banner with event data and geometry parameters */
+	/** Initialize the banner with event data and disk scale */
 	void InitBanner(
 		const FFlightEventData& InEventData,
-		float ArcAngleDeg,
-		float ArcRadius,
-		float ArcHeight,
-		int32 ArcSegments,
+		float DiskRadius,
+		float DiskThickness,
 		UMaterialInterface* BannerMaterial,
 		UFont* TextFont);
+
+	/** Initialize slide motion (call after InitBanner) */
+	void InitSlide(float InSlideSpeed);
+
+	/** Override the disk color (call after InitBanner) */
+	void SetDiskColor(const FLinearColor& Color);
 
 	/** Start the fade-out sequence */
 	UFUNCTION(BlueprintCallable, Category = "Banner")
@@ -52,34 +55,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Banner")
 	void ForceDestroy();
 
-	/** Get the event data this banner was spawned for */
 	UFUNCTION(BlueprintCallable, Category = "Banner")
 	const FFlightEventData& GetEventData() const { return EventData; }
 
 	UFUNCTION(BlueprintCallable, Category = "Banner")
 	EBannerState GetBannerState() const { return State; }
 
-	/** Spawn time (world seconds) for age-based culling */
 	double SpawnTime = 0.0;
 
-	/** ECEF position of the banner (for Earth-fixed positioning) */
-	UPROPERTY(BlueprintReadOnly, Category = "Banner")
-	FVector ECEFPosition = FVector::ZeroVector;
-
-	/** Banner lifetime in seconds (0 = infinite) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
 	float LifetimeSeconds = 30.0f;
 
-	/** Fade-out duration in seconds */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
+	float FadeInDuration = 0.3f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
 	float FadeOutDuration = 1.0f;
-
-	/** Additional rotation offset applied after trajectory alignment (degrees) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
-	FRotator BannerRotationOffset = FRotator::ZeroRotator;
-
-	/** Set rotation so face normal aligns with trajectory vector (call once at spawn) */
-	void SetTrajectoryRotation(const FVector& Trajectory);
 
 protected:
 	void UpdateSpawnAnimation(float DeltaTime);
@@ -87,7 +78,7 @@ protected:
 	void RenderTextToTarget();
 
 	UPROPERTY()
-	UProceduralMeshComponent* MeshComponent = nullptr;
+	UStaticMeshComponent* DiskMesh = nullptr;
 
 	UPROPERTY()
 	UMaterialInstanceDynamic* DynamicMaterial = nullptr;
@@ -101,13 +92,8 @@ protected:
 	FFlightEventData EventData;
 	EBannerState State = EBannerState::SpawnAnimation;
 
-	// Spawn animation state
+	float SlideSpeed = 0.0f;
 	float SpawnAnimTime = 0.0f;
-	static constexpr float SpawnOvershootDuration = 0.2f;
-	static constexpr float SpawnSettleDuration = 0.1f;
-	static constexpr float SpawnOvershootScale = 1.1f;
-
-	// Fade state
 	float FadeAlpha = 1.0f;
 	float CurrentLifetime = 0.0f;
 };

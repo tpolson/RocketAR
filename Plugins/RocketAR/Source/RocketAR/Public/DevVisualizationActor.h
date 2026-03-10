@@ -9,10 +9,9 @@ class UStaticMeshComponent;
 class UMaterialInstanceDynamic;
 
 /**
- * Development visualization: Earth sphere + rocket cylinder + event disks.
+ * Development visualization: Earth sphere + rocket cylinder.
  * Earth is real scale, centered at ECEF origin (below the UE origin by Earth radius).
  * Rocket cylinder tracks vehicle position each frame.
- * Event disks are spawned at flight event positions on the rocket axis.
  * Visible in viewport for dev; excluded from broadcast output via toggle.
  */
 UCLASS(BlueprintType)
@@ -28,14 +27,6 @@ public:
 	/** Update rocket position from telemetry */
 	UFUNCTION(BlueprintCallable, Category = "Dev")
 	void UpdateFromTelemetry(const FProcessedTelemetryData& Data);
-
-	/** Spawn a disk marker at an event position (UE space) */
-	UFUNCTION(BlueprintCallable, Category = "Dev")
-	void SpawnEventDisk(const FVector& UEPosition, const FQuat& UERotation, const FString& Label);
-
-	/** Remove all event disks */
-	UFUNCTION(BlueprintCallable, Category = "Dev")
-	void ClearEventDisks();
 
 	/** Show or hide all dev visualization */
 	UFUNCTION(BlueprintCallable, Category = "Dev")
@@ -66,15 +57,6 @@ private:
 	/** Unscaled component at rocket base position+rotation — camera attaches here */
 	UPROPERTY()
 	USceneComponent* RocketMountPoint = nullptr;
-
-	UPROPERTY()
-	UMaterialInstanceDynamic* DiskMaterial = nullptr;
-
-	UPROPERTY()
-	TArray<UStaticMeshComponent*> EventDiskMeshes;
-
-	UPROPERTY()
-	UStaticMesh* CylinderMeshAsset = nullptr;
 
 	/** Previous UE position for velocity-based rocket orientation */
 	FVector PrevUEPosition = FVector::ZeroVector;
