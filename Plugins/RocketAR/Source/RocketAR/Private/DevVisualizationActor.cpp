@@ -69,13 +69,8 @@ void ADevVisualizationActor::BeginPlay()
 		}
 	}
 
-	// Rocket: ~100m tall, ~8m diameter
-	// Default cylinder is 100cm diameter (50cm radius), 100cm tall
-	// Scale X,Y = 800cm / 100cm = 8, Z = 10000cm / 100cm = 100
-	RocketMesh->SetWorldScale3D(FVector(8.0, 8.0, 100.0));
-
-	// Offset mesh up by half its height so the base sits at the vehicle position
-	RocketMesh->SetRelativeLocation(FVector(0.0, 0.0, 5000.0));
+	// Apply rocket dimensions (configurable via RocketHeight/RocketRadius)
+	UpdateRocketDimensions();
 
 	if (BaseMat)
 	{
@@ -88,6 +83,18 @@ void ADevVisualizationActor::BeginPlay()
 	}
 
 	UE_LOG(LogRocketAR, Log, TEXT("DevVisualization initialized"));
+}
+
+void ADevVisualizationActor::UpdateRocketDimensions()
+{
+	if (RocketMesh)
+	{
+		// UE cylinder: 50cm radius, 100cm tall at scale 1.0
+		const float ScaleXY = (RocketRadius * 100.0f) / 50.0f;
+		const float ScaleZ  = (RocketHeight * 100.0f) / 100.0f;
+		RocketMesh->SetWorldScale3D(FVector(ScaleXY, ScaleXY, ScaleZ));
+		RocketMesh->SetRelativeLocation(FVector(0.0, 0.0, RocketHeight * 50.0f));
+	}
 }
 
 void ADevVisualizationActor::UpdateFromTelemetry(const FProcessedTelemetryData& Data)

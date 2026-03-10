@@ -194,6 +194,8 @@ void ARocketARSetupActor::SetupDevVisualization()
 			DevVisActor->SetEarthTransform(EarthCenterUE, PoleDirection);
 		}
 #endif
+		DevVisActor->RocketHeight = RocketHeight;
+		DevVisActor->RocketRadius = RocketRadius;
 		DevVisActor->SetVisible(bDevVisualization);
 		bDevVisLastState = bDevVisualization;
 		UE_LOG(LogRocketAR, Log, TEXT("Dev visualization actor spawned (visible=%s)"),
@@ -509,6 +511,14 @@ void ARocketARSetupActor::Tick(float DeltaTime)
 		EventDetector->Config = EventConfig;
 		EventDetector->Config.AltitudeMarkerInterval = AltitudeMarkerInterval;
 		EventDetector->Config.AltitudeMarkerAnticipation = AltitudeMarkerAnticipation;
+	}
+
+	// Live-sync rocket dimensions for runtime tweaking
+	if (DevVisActor)
+	{
+		DevVisActor->RocketHeight = RocketHeight;
+		DevVisActor->RocketRadius = RocketRadius;
+		DevVisActor->UpdateRocketDimensions();
 	}
 
 	// Toggle dev visualization when the bool changes

@@ -174,8 +174,16 @@ public:
 
 	// --- Dev / Debug ---
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev Visualization")
 	bool bDevVisualization = true;
+
+	/** Rocket body height in meters (pivot at engine end, grows upward). SLS Block 1 = 98m. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev Visualization")
+	float RocketHeight = 98.0f;
+
+	/** Rocket body radius in meters. SLS Block 1 core stage = 4.2m. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev Visualization")
+	float RocketRadius = 4.2f;
 
 	/** Show bottom-left MET/ALT/VEL telemetry box */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD")

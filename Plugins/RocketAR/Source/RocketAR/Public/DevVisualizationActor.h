@@ -41,6 +41,17 @@ public:
 	/** Get the unscaled mount point at rocket base (for camera attachment) */
 	USceneComponent* GetRocketMountPoint() const { return RocketMountPoint; }
 
+	/** Rocket body height in meters. SLS Block 1 = 98m. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev Visualization")
+	float RocketHeight = 98.0f;
+
+	/** Rocket body radius in meters. SLS Block 1 core stage = 4.2m. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev Visualization")
+	float RocketRadius = 4.2f;
+
+	/** Apply current height/radius to mesh scale and offset */
+	void UpdateRocketDimensions();
+
 private:
 	UPROPERTY()
 	UStaticMeshComponent* EarthMesh = nullptr;
