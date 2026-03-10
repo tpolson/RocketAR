@@ -9,6 +9,7 @@
 #include "RocketARHUD.h"
 #include "BannerActor.h"
 #include "CineCameraActor.h"
+#include "CineCameraComponent.h"
 #include "Engine/DirectionalLight.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Engine/SkyLight.h"
@@ -202,6 +203,9 @@ void ARocketARSetupActor::SetupDevVisualization()
 			bDevVisualization ? TEXT("true") : TEXT("false"));
 	}
 
+	// Spawn dev camera (always created, toggled via bUseDevCamera)
+	SetupDevCamera();
+
 	// Spawn a directional light (sun) for dev lighting
 	// UE origin is at launch pad with Cesium ENU: X=East, Y=South, Z=Up
 	// Sun coming from above and slightly south/east — illuminates rocket and Earth
@@ -232,6 +236,47 @@ void ARocketARSetupActor::SetupDevVisualization()
 	}
 }
 
+
+void ARocketARSetupActor::SetupDevCamera()
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	DevCameraActor = World->SpawnActor<ACineCameraActor>(
+		ACineCameraActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+
+	if (DevCameraActor && DevVisActor && DevVisActor->GetRocketMountPoint())
+	{
+		DevCameraActor->AttachToComponent(
+			DevVisActor->GetRocketMountPoint(),
+			FAttachmentTransformRules::KeepRelativeTransform);
+		DevCameraActor->SetActorRelativeLocation(DevCameraOffset);
+		DevCameraActor->SetActorRelativeRotation(DevCameraRotation);
+
+		UCineCameraComponent* CineComp = DevCameraActor->GetCineCameraComponent();
+		if (CineComp)
+		{
+			CineComp->SetFieldOfView(DevCameraFOV);
+		}
+
+		UE_LOG(LogRocketAR, Log, TEXT("Dev camera spawned and attached to rocket mount"));
+	}
+
+	// If bUseDevCamera is already true at startup, switch view target
+	if (bUseDevCamera && DevCameraActor)
+	{
+		APlayerController* PC = World->GetFirstPlayerController();
+		if (PC)
+		{
+			PC->SetViewTarget(DevCameraActor);
+			bCameraViewSet = true;
+		}
+	}
+	bDevCameraLastState = bUseDevCamera;
+}
 
 void ARocketARSetupActor::SetupFreezeFrame()
 {
@@ -338,11 +383,10 @@ void ARocketARSetupActor::WireSubsystems()
 	// Configure banner manager
 	if (BannerManager)
 	{
-		BannerManager->BannerDiskRadius = BannerDiskRadius;
-		BannerManager->BannerDiskThickness = BannerDiskThickness;
+		BannerManager->BannerWidth = BannerWidth;
+		BannerManager->BannerHeight = BannerHeight;
 		BannerManager->MaxActiveBanners = MaxActiveBanners;
-		BannerManager->BannerMaterial = BannerMaterial;
-		BannerManager->BannerFont = BannerFont;
+		BannerManager->BannerFadeOutDuration = BannerFadeOutDuration;
 		BannerManager->TriggerTimeOffset = TriggerTimeOffset;
 		BannerManager->SlideSpeed = SlideSpeed;
 		BannerManager->SlideDuration = SlideDuration;
@@ -350,6 +394,8 @@ void ARocketARSetupActor::WireSubsystems()
 		BannerManager->BannerSpawnZOffset = BannerSpawnZOffset;
 		BannerManager->MarkerSpawnZOffset = MarkerSpawnZOffset;
 		BannerManager->AnticipationSeconds = AnticipationSeconds;
+		BannerManager->BannerTextSize = BannerTextSize;
+		BannerManager->BannerTextOffset = BannerTextOffset;
 	}
 
 	// Wire event detector — setup actor is sole handler for event→banner/HUD
@@ -358,13 +404,16 @@ void ARocketARSetupActor::WireSubsystems()
 		EventDetector->OnFlightEvent.AddDynamic(this, &ARocketARSetupActor::OnFlightEventDetected);
 	}
 
-	// Sync marker geometry and debug flag to banner manager
+	// Sync marker geometry, text config, and debug flag to banner manager
 	if (BannerManager)
 	{
-		BannerManager->MarkerDiskRadius = MarkerDiskRadius;
-		BannerManager->MarkerDiskThickness = MarkerDiskThickness;
+		BannerManager->MarkerWidth = MarkerWidth;
+		BannerManager->MarkerHeight = MarkerHeight;
 		BannerManager->MarkerColor = MarkerColor;
+		BannerManager->MarkerTextSize = MarkerTextSize;
+		BannerManager->MarkerTextOffset = MarkerTextOffset;
 		BannerManager->bShowDebugMessages = bShowDebugMessages;
+		BannerManager->bDevOpaqueBanners = bDevOpaqueBanners;
 	}
 
 	// Sync full event config, then overlay convenience properties
@@ -446,14 +495,19 @@ void ARocketARSetupActor::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 
 	// Set camera as view target on first available tick (PC may not exist during BeginPlay)
-	if (CameraActor && !bCameraViewSet)
+	if (!bCameraViewSet)
 	{
 		APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
 		if (PC)
 		{
-			PC->SetViewTarget(CameraActor);
-			bCameraViewSet = true;
-			UE_LOG(LogRocketAR, Log, TEXT("Camera view target set to CineCameraActor"));
+			ACineCameraActor* Target = (bUseDevCamera && DevCameraActor) ? DevCameraActor : CameraActor;
+			if (Target)
+			{
+				PC->SetViewTarget(Target);
+				bCameraViewSet = true;
+				UE_LOG(LogRocketAR, Log, TEXT("Camera view target set to %s"),
+					bUseDevCamera ? TEXT("DevCamera") : TEXT("ProductionCamera"));
+			}
 		}
 	}
 
@@ -475,11 +529,10 @@ void ARocketARSetupActor::Tick(float DeltaTime)
 	// Live-sync banner config so new banners use current values
 	if (BannerManager)
 	{
-		BannerManager->BannerDiskRadius = BannerDiskRadius;
-		BannerManager->BannerDiskThickness = BannerDiskThickness;
+		BannerManager->BannerWidth = BannerWidth;
+		BannerManager->BannerHeight = BannerHeight;
 		BannerManager->MaxActiveBanners = MaxActiveBanners;
-		BannerManager->BannerMaterial = BannerMaterial;
-		BannerManager->BannerFont = BannerFont;
+		BannerManager->BannerFadeOutDuration = BannerFadeOutDuration;
 		BannerManager->TriggerTimeOffset = TriggerTimeOffset;
 		BannerManager->SlideSpeed = SlideSpeed;
 		BannerManager->SlideDuration = SlideDuration;
@@ -487,15 +540,20 @@ void ARocketARSetupActor::Tick(float DeltaTime)
 		BannerManager->BannerSpawnZOffset = BannerSpawnZOffset;
 		BannerManager->MarkerSpawnZOffset = MarkerSpawnZOffset;
 		BannerManager->AnticipationSeconds = AnticipationSeconds;
+		BannerManager->BannerTextSize = BannerTextSize;
+		BannerManager->BannerTextOffset = BannerTextOffset;
 	}
 
-	// Live-sync marker geometry and debug flag
+	// Live-sync marker geometry, text config, and debug flag
 	if (BannerManager)
 	{
-		BannerManager->MarkerDiskRadius = MarkerDiskRadius;
-		BannerManager->MarkerDiskThickness = MarkerDiskThickness;
+		BannerManager->MarkerWidth = MarkerWidth;
+		BannerManager->MarkerHeight = MarkerHeight;
 		BannerManager->MarkerColor = MarkerColor;
+		BannerManager->MarkerTextSize = MarkerTextSize;
+		BannerManager->MarkerTextOffset = MarkerTextOffset;
 		BannerManager->bShowDebugMessages = bShowDebugMessages;
+		BannerManager->bDevOpaqueBanners = bDevOpaqueBanners;
 	}
 
 	// Live-sync HUD flags
@@ -526,6 +584,38 @@ void ARocketARSetupActor::Tick(float DeltaTime)
 	{
 		DevVisActor->SetVisible(bDevVisualization);
 		bDevVisLastState = bDevVisualization;
+	}
+
+	// Live-sync dev camera transform and FOV
+	if (DevCameraActor)
+	{
+		DevCameraActor->SetActorRelativeLocation(DevCameraOffset);
+		DevCameraActor->SetActorRelativeRotation(DevCameraRotation);
+		UCineCameraComponent* DevCineComp = DevCameraActor->GetCineCameraComponent();
+		if (DevCineComp)
+		{
+			DevCineComp->SetFieldOfView(DevCameraFOV);
+		}
+	}
+
+	// Toggle between dev camera and production camera
+	if (bUseDevCamera != bDevCameraLastState)
+	{
+		APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+		if (PC)
+		{
+			if (bUseDevCamera && DevCameraActor)
+			{
+				PC->SetViewTarget(DevCameraActor);
+				UE_LOG(LogRocketAR, Log, TEXT("Switched to dev camera"));
+			}
+			else if (CameraActor)
+			{
+				PC->SetViewTarget(CameraActor);
+				UE_LOG(LogRocketAR, Log, TEXT("Switched to production camera"));
+			}
+		}
+		bDevCameraLastState = bUseDevCamera;
 	}
 
 	// Live-sync freeze frame — re-run when altitude or label changes

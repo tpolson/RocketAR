@@ -108,20 +108,23 @@ ABannerActor* UBannerManager::SpawnBannerFromQueue(const FPendingBanner& Pending
 	Banner->LifetimeSeconds = SlideDuration;
 	Banner->FadeOutDuration = BannerFadeOutDuration;
 	Banner->FadeInDuration = FadeInDuration;
-	const float Radius = bIsMarker ? MarkerDiskRadius : BannerDiskRadius;
-	const float Thickness = bIsMarker ? MarkerDiskThickness : BannerDiskThickness;
+	const float Width = bIsMarker ? MarkerWidth : BannerWidth;
+	const float Height = bIsMarker ? MarkerHeight : BannerHeight;
+
+	// Configure text before InitBanner
+	Banner->TextWorldSize = bIsMarker ? MarkerTextSize : BannerTextSize;
+	Banner->TextOffset = bIsMarker ? MarkerTextOffset : BannerTextOffset;
 
 	Banner->InitBanner(
 		Pending.EventData,
-		Radius,
-		Thickness,
-		BannerMaterial,
-		BannerFont);
+		Width,
+		Height,
+		bDevOpaqueBanners);
 
 	// Set marker color if this is an altitude marker
 	if (bIsMarker)
 	{
-		Banner->SetDiskColor(MarkerColor);
+		Banner->SetBannerColor(MarkerColor);
 	}
 
 	Banner->InitSlide(SlideSpeed);
@@ -130,11 +133,12 @@ ABannerActor* UBannerManager::SpawnBannerFromQueue(const FPendingBanner& Pending
 	SET_DWORD_STAT(STAT_ActiveBanners, ActiveBanners.Num());
 
 	const TCHAR* TypeLabel = bIsMarker ? TEXT("altitude marker") : TEXT("banner");
-	UE_LOG(LogRocketAR, Log, TEXT("BannerManager: Spawned %s '%s' at (%.0f, %.0f, %.0f) slide=%.0f cm/s (total: %d)"),
+	UE_LOG(LogRocketAR, Log, TEXT("BannerManager: Spawned %s '%s' slide=%.0f textSize=%.0f (total: %d)"),
 		TypeLabel,
 		*Pending.EventData.EventLabel,
-		Pending.SpawnPosition.X, Pending.SpawnPosition.Y, Pending.SpawnPosition.Z,
-		SlideSpeed, ActiveBanners.Num());
+		SlideSpeed,
+		Banner->TextWorldSize,
+		ActiveBanners.Num());
 
 	if (GEngine && bShowDebugMessages)
 	{

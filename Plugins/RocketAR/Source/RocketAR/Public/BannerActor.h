@@ -5,8 +5,9 @@
 #include "FlightEventTypes.h"
 #include "BannerActor.generated.h"
 
+class USceneComponent;
 class UStaticMeshComponent;
-class UCanvasRenderTarget2D;
+class UTextRenderComponent;
 class UMaterialInstanceDynamic;
 
 UENUM(BlueprintType)
@@ -19,7 +20,7 @@ enum class EBannerState : uint8
 };
 
 /**
- * Banner actor: flat disk (squished cylinder) parented to the rocket.
+ * Banner actor: flat plane with translucent text material.
  * Slides along the rocket's local -Z axis (toward exhaust).
  */
 UCLASS(BlueprintType)
@@ -33,19 +34,18 @@ public:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
 
-	/** Initialize the banner with event data and disk scale */
+	/** Initialize the banner with event data and dimensions */
 	void InitBanner(
 		const FFlightEventData& InEventData,
-		float DiskRadius,
-		float DiskThickness,
-		UMaterialInterface* BannerMaterial,
-		UFont* TextFont);
+		float InWidth,
+		float InHeight,
+		bool bUseOpaqueMaterial = false);
 
 	/** Initialize slide motion (call after InitBanner) */
 	void InitSlide(float InSlideSpeed);
 
-	/** Override the disk color (call after InitBanner) */
-	void SetDiskColor(const FLinearColor& Color);
+	/** Override the banner color tint (call after InitBanner) */
+	void SetBannerColor(const FLinearColor& Color);
 
 	/** Start the fade-out sequence */
 	UFUNCTION(BlueprintCallable, Category = "Banner")
@@ -72,22 +72,31 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
 	float FadeOutDuration = 1.0f;
 
+	// Text configuration (set by BannerManager before InitBanner or at runtime)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner|Text")
+	FVector TextOffset = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner|Text")
+	float TextWorldSize = 200.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner|Text")
+	FColor TextColor = FColor::White;
+
 protected:
 	void UpdateSpawnAnimation(float DeltaTime);
 	void UpdateFadeOut(float DeltaTime);
-	void RenderTextToTarget();
 
 	UPROPERTY()
-	UStaticMeshComponent* DiskMesh = nullptr;
+	USceneComponent* RootScene = nullptr;
+
+	UPROPERTY()
+	UStaticMeshComponent* BannerMesh = nullptr;
+
+	UPROPERTY()
+	UTextRenderComponent* TextComponent = nullptr;
 
 	UPROPERTY()
 	UMaterialInstanceDynamic* DynamicMaterial = nullptr;
-
-	UPROPERTY()
-	UCanvasRenderTarget2D* RenderTarget = nullptr;
-
-	UPROPERTY()
-	UFont* BannerFont = nullptr;
 
 	FFlightEventData EventData;
 	EBannerState State = EBannerState::SpawnAnimation;

@@ -65,10 +65,10 @@ public:
 
 	// Geometry configuration
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config")
-	float BannerDiskRadius = 5000.0f; // cm (50m)
+	float BannerWidth = 10000.0f; // cm (100m)
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config")
-	float BannerDiskThickness = 100.0f; // cm (1m)
+	float BannerHeight = 10000.0f; // cm (100m)
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config")
 	int32 MaxActiveBanners = 20;
@@ -76,24 +76,30 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config")
 	float BannerFadeOutDuration = 1.0f;
 
-	/** Material to use for banners (must have BannerTexture and Opacity parameters) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config")
-	UMaterialInterface* BannerMaterial = nullptr;
-
-	/** Font for banner text */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config")
-	UFont* BannerFont = nullptr;
-
 	/** Banner actor class to spawn (defaults to ABannerActor) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config")
 	TSubclassOf<ABannerActor> BannerActorClass;
 
+	// Text configuration for event banners
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Text")
+	float BannerTextSize = 200.0f; // cm
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Text")
+	FVector BannerTextOffset = FVector::ZeroVector;
+
+	// Text configuration for altitude markers
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Text")
+	float MarkerTextSize = 150.0f; // cm
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Text")
+	FVector MarkerTextOffset = FVector::ZeroVector;
+
 	// Altitude marker geometry (distinct from event banners)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Marker")
-	float MarkerDiskRadius = 2000.0f; // cm (20m)
+	float MarkerWidth = 4000.0f; // cm (40m)
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Marker")
-	float MarkerDiskThickness = 50.0f; // cm (0.5m)
+	float MarkerHeight = 4000.0f; // cm (40m)
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Marker")
 	FLinearColor MarkerColor = FLinearColor(0.2f, 0.8f, 1.0f, 1.0f); // cyan
@@ -122,6 +128,10 @@ public:
 	/** Seconds before trigger time to begin spawn (anticipation) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Slide")
 	float AnticipationSeconds = 1.5f;
+
+	/** Use opaque banner material for dev wireframe visibility (no alpha/fade) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Debug")
+	bool bDevOpaqueBanners = false;
 
 	/** Whether to show on-screen debug messages when banners spawn */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Debug")

@@ -100,22 +100,24 @@ public:
 
 	// --- Banner Configuration ---
 
-	/** Disk radius in cm */
+	/** Banner width in cm (100m default, 4:1 ratio with height) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
-	float BannerDiskRadius = 5000.0f; // cm (50m)
+	float BannerWidth = 10000.0f; // cm (100m)
 
-	/** Disk thickness in cm */
+	/** Banner height in cm */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
-	float BannerDiskThickness = 100.0f; // cm (1m)
+	float BannerHeight = 10000.0f; // cm (100m)
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
 	int32 MaxActiveBanners = 20;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
-	UMaterialInterface* BannerMaterial = nullptr;
+	/** Text size for event banners (cm, UTextRenderComponent WorldSize) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner|Text")
+	float BannerTextSize = 200.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
-	UFont* BannerFont = nullptr;
+	/** Local offset of text from banner root (cm) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner|Text")
+	FVector BannerTextOffset = FVector::ZeroVector;
 
 	// --- Banner Slide Configuration ---
 
@@ -134,6 +136,10 @@ public:
 	/** Opacity ramp-up time at spawn */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner|Slide")
 	float BannerFadeInDuration = 0.3f;
+
+	/** Opacity ramp-down time before destruction */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner|Slide")
+	float BannerFadeOutDuration = 1.0f;
 
 	/** Local Z offset above vehicle center for event banners (cm) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner|Slide")
@@ -156,17 +162,25 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Marker")
 	float AltitudeMarkerInterval = 10000.0f;
 
-	/** Altitude marker disk radius in cm (smaller than event banners) */
+	/** Altitude marker width in cm (smaller than event banners) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Marker")
-	float MarkerDiskRadius = 2000.0f; // cm (20m)
+	float MarkerWidth = 4000.0f; // cm (40m)
 
-	/** Altitude marker disk thickness in cm */
+	/** Altitude marker height in cm */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Marker")
-	float MarkerDiskThickness = 50.0f; // cm (0.5m)
+	float MarkerHeight = 4000.0f; // cm (40m)
 
 	/** Altitude marker color */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Marker")
 	FLinearColor MarkerColor = FLinearColor(0.2f, 0.8f, 1.0f, 1.0f); // cyan
+
+	/** Text size for altitude markers (cm) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Marker|Text")
+	float MarkerTextSize = 150.0f;
+
+	/** Local offset of text from marker root (cm) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Marker|Text")
+	FVector MarkerTextOffset = FVector::ZeroVector;
 
 	/** Seconds of look-ahead for predictive altitude marker firing */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Marker")
@@ -176,6 +190,10 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev Visualization")
 	bool bDevVisualization = true;
+
+	/** Use opaque banner material for dev wireframe visibility (no alpha/fade) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev Visualization")
+	bool bDevOpaqueBanners = false;
 
 	/** Rocket body height in meters (pivot at engine end, grows upward). SLS Block 1 = 98m. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev Visualization")
@@ -196,6 +214,24 @@ public:
 	/** Show top-left debug messages (BANNER:/ALTITUDE: spawn text) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD")
 	bool bShowDebugMessages = true;
+
+	// --- Dev Camera ---
+
+	/** Enable the dev inspection camera (parented to rocket, adjustable position/rotation) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev Camera")
+	bool bUseDevCamera = false;
+
+	/** Dev camera offset from rocket root (cm). Z = along rocket axis toward nose. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev Camera", meta=(EditCondition="bUseDevCamera"))
+	FVector DevCameraOffset = FVector(0.0f, 0.0f, 15000.0f);
+
+	/** Dev camera rotation relative to rocket. Default: looking down the rocket body. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev Camera", meta=(EditCondition="bUseDevCamera"))
+	FRotator DevCameraRotation = FRotator(-90.0f, 0.0f, 0.0f);
+
+	/** Dev camera field of view (degrees) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev Camera", meta=(EditCondition="bUseDevCamera", ClampMin="1.0", ClampMax="180.0"))
+	float DevCameraFOV = 90.0f;
 
 	/** Freeze-frame mode: places rocket at TestAltitude with a test banner. No CSV playback. Tweak visuals live. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev|Freeze Frame")
@@ -250,11 +286,13 @@ private:
 	void SetupCamera();
 	void SetupCSVProvider();
 	void SetupDevVisualization();
+	void SetupDevCamera();
 	void SetupHUD();
 	void SetupFreezeFrame();
 	void WireSubsystems();
 	bool bDevVisLastState = false;
 	bool bCameraViewSet = false;
+	bool bDevCameraLastState = false;
 	float FreezeFrameAltitudeLast = -1.0f;
 	FString FreezeFrameEventLabelLast;
 
@@ -295,6 +333,9 @@ private:
 
 	UPROPERTY()
 	ADevVisualizationActor* DevVisActor = nullptr;
+
+	UPROPERTY()
+	ACineCameraActor* DevCameraActor = nullptr;
 
 	UPROPERTY()
 	ARocketARHUD* HUDOverlay = nullptr;
