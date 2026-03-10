@@ -12,10 +12,10 @@
 | Key | Function |
 |---|---|
 | Space | Pause / Resume playback (CSV mode) |
-| Left Arrow | Scrub back 1 second |
-| Right Arrow | Scrub forward 1 second |
-| [ | Decrease time scale (halve) |
-| ] | Increase time scale (double) |
+| Left Arrow | Scrub backward 10 seconds |
+| Right Arrow | Scrub forward 10 seconds |
+| [ | Decrease time scale (-0.2x) |
+| ] | Increase time scale (+0.2x) |
 | R | Reset — destroy all banners, restart from T-0 |
 | D | Toggle dev visualization (Earth + rocket) |
 | F1 | Toggle HUD overlay |
@@ -28,7 +28,7 @@
 |---|---|
 | Ignition | Any engine thrust > 1% (rising edge) |
 | Liftoff | Altitude exceeds 1m |
-| Mach 1 | Velocity / speed of sound ≥ 1.0 |
+| Mach 1 | Velocity / speed of sound >= 1.0 |
 | Max Q | Dynamic pressure peaks (20s rising, 5% drop, 1s confirm) |
 | SRB Ignition | SRB engines activate |
 | SRB Separation | SRB engines shut down |
@@ -38,18 +38,30 @@
 | Fairing Jettison | Altitude > 100km and Q < 1 Pa |
 | SECO | Second stage engine shuts down |
 | Apogee | Vertical velocity goes negative (after MECO) |
-| Altitude Markers | Every 10km during ascent |
+| Reentry | Dynamic pressure rises above threshold |
+| Chute Deploy | Altitude drops below threshold while descending |
+| Splashdown | Altitude near sea level after descent |
+| Altitude Markers | Predictive: every 10km during ascent (configurable) |
+
+## Banner Behavior
+
+Banners spawn above the rocket nose (configurable Z offset) and slide down along the rocket body. They begin animating slightly before the trigger point via anticipation timing.
+
+| Parameter | Default | Effect |
+|---|---|---|
+| BannerSpawnZOffset | 8000 cm | Where banners appear relative to vehicle center |
+| AnticipationSeconds | 1.5s | How early banners spawn before the trigger |
+| SlideSpeed | 5000 cm/s | How fast banners slide toward exhaust |
+| SlideDuration | 10s | How long banners stay visible |
 
 ## HUD Display
 
-When enabled (`F1`), the HUD shows:
+When enabled (F1), the HUD shows:
 - **MET** — Mission Elapsed Time (T+HH:MM:SS)
 - **Altitude** — meters or km above sea level
 - **Velocity** — m/s
-- **Mach** — Mach number
-- **G-Force** — acceleration in G
-- **Flight Phase** — current flight regime
-- **Status** — LIVE / CSV / PREDICTED / SIGNAL LOSS / STALE
+
+Event names display at top-center with a 5-second duration and 1-second fade.
 
 Status color: Green = good, Yellow = predicted (1-3s stale), Red = signal loss (>3s)
 
@@ -61,15 +73,21 @@ Status color: Green = good, Yellow = predicted (1-3s stale), Red = signal loss (
    - Connect tri-sync/black burst for genlock
 2. In RocketAR, set `MediaOutputAssetPath` on the media output component
 3. Set `bAutoStart = true` for automatic capture on play
-4. Enable genlock: `bEnableGenlock = true` + configure BlackmagicCustomTimeStep in Project Settings
+4. Enable genlock: `bEnableGenlock = true`
 5. Verify on switcher: clean alpha edges, fully transparent background
 
 ## Troubleshooting
 
 **Banners not appearing:**
-- Check Output Log for "FLIGHT EVENT" messages
+- Check Output Log for "FLIGHT EVENT" and "BannerManager: Spawned" messages
 - Verify CSV is loaded ("CSV loaded: N rows")
 - Check BannerMaterial and BannerFont are assigned
+- For altitude markers, verify `bShowAltitudeMarkers = true`
+
+**Banners not in camera view:**
+- Adjust `BannerSpawnZOffset` — may need to match camera mount height
+- Use freeze-frame mode (`bFreezeFrameMode = true`) to tune visually
+- Check `CameraMountOffset` Z value is above banner spawn offset
 
 **Alpha not clean:**
 - Verify `r.PostProcessing.PropagateAlpha = 1` in Project Settings

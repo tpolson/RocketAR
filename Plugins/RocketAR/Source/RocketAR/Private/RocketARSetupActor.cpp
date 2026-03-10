@@ -365,9 +365,10 @@ void ARocketARSetupActor::WireSubsystems()
 		BannerManager->bShowDebugMessages = bShowDebugMessages;
 	}
 
-	// Sync altitude marker config
+	// Sync full event config, then overlay convenience properties
 	if (EventDetector)
 	{
+		EventDetector->Config = EventConfig;
 		EventDetector->Config.AltitudeMarkerInterval = AltitudeMarkerInterval;
 		EventDetector->Config.AltitudeMarkerAnticipation = AltitudeMarkerAnticipation;
 	}
@@ -502,9 +503,10 @@ void ARocketARSetupActor::Tick(float DeltaTime)
 		HUDOverlay->bShowEvents = bShowHUDEvents;
 	}
 
-	// Live-sync altitude marker config to event detector
+	// Live-sync full event config, then overlay convenience properties
 	if (EventDetector)
 	{
+		EventDetector->Config = EventConfig;
 		EventDetector->Config.AltitudeMarkerInterval = AltitudeMarkerInterval;
 		EventDetector->Config.AltitudeMarkerAnticipation = AltitudeMarkerAnticipation;
 	}

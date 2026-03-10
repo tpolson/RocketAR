@@ -52,7 +52,9 @@ MET_END = 600.0    # 10 minutes of flight
 # SLS-like flight profile parameters
 SRB_THRUST = 0.95       # SRB thrust level
 CORE_THRUST = 0.85      # Core stage thrust
-LIFTOFF_MET = 0.0
+CORE_IGN_MET = -6.6     # Core engines ignite (RS-25 start)
+SRB_IGN_MET = 0.0       # SRB ignition = liftoff command
+LIFTOFF_MET = 0.3       # Vehicle clears tower (slight delay after SRBs)
 GRAVITY_TURN_MET = 15.0
 MACH1_APPROX_MET = 60.0
 MAXQ_APPROX_MET = 80.0
@@ -150,18 +152,24 @@ def generate_trajectory(launch_lat_rad, launch_lon_rad, launch_alt, azimuth_rad)
         thrust_core = 0.0
         thrust_s2 = 0.0
 
-        if t < 0:
-            # Countdown — sitting on pad
+        if t < CORE_IGN_MET:
+            # Pre-ignition countdown — sitting on pad, no engines
+            alt = 0.0
+            vel_up = 0.0
+            vel_downrange = 0.0
+            a_downrange, a_cross, a_up = 0.0, 0.0, 0.0
+        elif t < SRB_IGN_MET:
+            # Core engines ramping up, vehicle held down on pad
+            core_ramp = min(1.0, (t - CORE_IGN_MET) / 3.0)  # 3s ramp to full
+            thrust_core = CORE_THRUST * core_ramp
             alt = 0.0
             vel_up = 0.0
             vel_downrange = 0.0
             a_downrange, a_cross, a_up = 0.0, 0.0, 0.0
         elif t < LIFTOFF_MET + 0.5:
-            # Ignition to liftoff
-            thrust_core = CORE_THRUST * min(1.0, (t - LIFTOFF_MET + 3.0) / 3.0)
-            thrust_srb = SRB_THRUST if t >= -6.0 else 0.0
-            if t >= 0:
-                thrust_srb = SRB_THRUST
+            # SRBs lit, vehicle lifting off
+            thrust_core = CORE_THRUST
+            thrust_srb = SRB_THRUST
 
             total_accel = 15.0 * (thrust_core + thrust_srb) - 9.81
             if total_accel < 0:
@@ -224,8 +232,8 @@ def generate_trajectory(launch_lat_rad, launch_lon_rad, launch_alt, azimuth_rad)
             a_downrange = 0.0
             a_cross = 0.0
 
-        # Integrate (simple Euler)
-        if t >= 0:
+        # Integrate (simple Euler) — vehicle moves only after SRB ignition
+        if t >= SRB_IGN_MET:
             vel_up += a_up * DT
             vel_downrange += a_downrange * DT
             alt += vel_up * DT

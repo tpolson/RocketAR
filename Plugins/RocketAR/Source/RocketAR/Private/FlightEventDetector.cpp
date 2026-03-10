@@ -12,10 +12,13 @@ void UFlightEventDetector::Reset()
 {
 	LatchedEvents.Empty();
 	DetectedEvents.Empty();
+	CustomLatchedEvents.Empty();
+	CustomPrevValues.Empty();
 	bPrevAnyEngineActive = false;
 	bPrevSRBsActive = false;
 	bPrevCoreActive = false;
 	bPrevSecondStageActive = false;
+	PadAltitude = 0.0;
 	PrevAltitude = 0.0;
 	PrevVerticalVelocity = 0.0;
 	PrevMachNumber = 0.0;
@@ -38,6 +41,9 @@ void UFlightEventDetector::ProcessTelemetry(const FProcessedTelemetryData& Data)
 
 	if (bFirstFrame)
 	{
+		// Record pad altitude for relative liftoff detection
+		PadAltitude = Data.AltitudeASL;
+
 		// Initialize previous state
 		bPrevAnyEngineActive = Data.bAnyEngineActive;
 		bPrevSRBsActive = AreSRBsActive(Data.RawData.EngineThrustPercent);
@@ -47,11 +53,18 @@ void UFlightEventDetector::ProcessTelemetry(const FProcessedTelemetryData& Data)
 		PrevVerticalVelocity = Data.VerticalVelocity;
 		PrevMachNumber = Data.MachNumber;
 		PrevDynamicPressure = Data.DynamicPressurePa;
+
+		// Initialize custom event previous values
+		for (const FCustomEventDefinition& Def : Config.CustomEvents)
+		{
+			CustomPrevValues.Add(Def.EventId, GetMetricValue(Def.Metric, Data));
+		}
+
 		bFirstFrame = false;
 		return;
 	}
 
-	// Check all events
+	// Check all built-in events
 	CheckIgnition(Data);
 	CheckLiftoff(Data);
 	CheckMach1(Data);
@@ -68,6 +81,9 @@ void UFlightEventDetector::ProcessTelemetry(const FProcessedTelemetryData& Data)
 	CheckSplashdown(Data);
 	CheckAltitudeMarkers(Data);
 
+	// Check custom events
+	CheckCustomEvents(Data);
+
 	// Update previous state
 	bPrevAnyEngineActive = Data.bAnyEngineActive;
 	bPrevSRBsActive = AreSRBsActive(Data.RawData.EngineThrustPercent);
@@ -78,6 +94,70 @@ void UFlightEventDetector::ProcessTelemetry(const FProcessedTelemetryData& Data)
 	PrevMachNumber = Data.MachNumber;
 	PrevDynamicPressure = Data.DynamicPressurePa;
 }
+
+// --- Data-driven enable/disable and label helpers ---
+
+bool UFlightEventDetector::IsEventEnabled(EFlightEvent EventType) const
+{
+	for (const auto& Override : Config.EventOverrides)
+	{
+		if (Override.EventType == EventType)
+		{
+			return Override.bEnabled;
+		}
+	}
+	return true; // no override = enabled
+}
+
+FString UFlightEventDetector::GetEventLabel(EFlightEvent EventType, const FString& Default, const FProcessedTelemetryData& Data, double ExtraValue) const
+{
+	const FBuiltinEventOverride* Found = nullptr;
+	for (const auto& Override : Config.EventOverrides)
+	{
+		if (Override.EventType == EventType) { Found = &Override; break; }
+	}
+	if (Found && !Found->LabelOverride.IsEmpty())
+	{
+		const FString Result = SubstituteTokens(Found->LabelOverride, Data, ExtraValue);
+		UE_LOG(LogRocketAR, Log, TEXT("GetEventLabel: Event %d using override '%s' → '%s'"),
+			static_cast<uint8>(EventType), *Found->LabelOverride, *Result);
+		return Result;
+	}
+	UE_LOG(LogRocketAR, Verbose, TEXT("GetEventLabel: Event %d using default '%s' (override %s)"),
+		static_cast<uint8>(EventType), *Default,
+		Found ? TEXT("found but empty") : TEXT("not found"));
+	return Default;
+}
+
+FString UFlightEventDetector::SubstituteTokens(const FString& Template, const FProcessedTelemetryData& Data, double ExtraValue)
+{
+	FString Result = Template;
+	Result.ReplaceInline(TEXT("{alt_km}"), *FString::Printf(TEXT("%.1f"), Data.AltitudeASL / 1000.0));
+	Result.ReplaceInline(TEXT("{alt_m}"), *FString::Printf(TEXT("%.0f"), Data.AltitudeASL));
+	Result.ReplaceInline(TEXT("{vel}"), *FString::Printf(TEXT("%.0f"), Data.VelocityMagnitude));
+	Result.ReplaceInline(TEXT("{mach}"), *FString::Printf(TEXT("%.1f"), Data.MachNumber));
+	Result.ReplaceInline(TEXT("{q_pa}"), *FString::Printf(TEXT("%.0f"), Data.DynamicPressurePa));
+	Result.ReplaceInline(TEXT("{met}"), *FString::Printf(TEXT("%.1f"), Data.RawData.MissionElapsedTime));
+	Result.ReplaceInline(TEXT("{gforce}"), *FString::Printf(TEXT("%.1f"), Data.GForce));
+	Result.ReplaceInline(TEXT("{extra}"), *FString::Printf(TEXT("%.0f"), ExtraValue));
+	return Result;
+}
+
+double UFlightEventDetector::GetMetricValue(ECustomEventMetric Metric, const FProcessedTelemetryData& Data)
+{
+	switch (Metric)
+	{
+	case ECustomEventMetric::Altitude:        return Data.AltitudeASL;
+	case ECustomEventMetric::Velocity:        return Data.VelocityMagnitude;
+	case ECustomEventMetric::MachNumber:      return Data.MachNumber;
+	case ECustomEventMetric::DynamicPressure: return Data.DynamicPressurePa;
+	case ECustomEventMetric::GForce:          return Data.GForce;
+	case ECustomEventMetric::MET:             return Data.RawData.MissionElapsedTime;
+	default:                                  return 0.0;
+	}
+}
+
+// --- Event firing ---
 
 void UFlightEventDetector::FireEvent(EFlightEvent EventType, const FProcessedTelemetryData& Data, const FString& Label)
 {
@@ -99,6 +179,26 @@ void UFlightEventDetector::FireEvent(EFlightEvent EventType, const FProcessedTel
 
 	UE_LOG(LogRocketAR, Log, TEXT("FLIGHT EVENT: %s at MET=%.1fs, Alt=%.0fm, Vel=%.0fm/s"),
 		*Label, EventData.MET, EventData.Altitude, EventData.Velocity);
+
+	OnFlightEvent.Broadcast(EventData);
+}
+
+void UFlightEventDetector::FireCustomEvent(const FCustomEventDefinition& Def, const FProcessedTelemetryData& Data, const FString& Label)
+{
+	FFlightEventData EventData;
+	EventData.EventType = EFlightEvent::Custom;
+	EventData.MET = Data.RawData.MissionElapsedTime;
+	EventData.Altitude = Data.AltitudeASL;
+	EventData.Velocity = Data.VelocityMagnitude;
+	EventData.EventLabel = Label;
+	EventData.ECEFPosition = Data.VehicleECEFPosition;
+	EventData.CustomEventId = Def.EventId;
+
+	DetectedEvents.Add(EventData);
+	CustomLatchedEvents.Add(Def.EventId);
+
+	UE_LOG(LogRocketAR, Log, TEXT("CUSTOM EVENT [%s]: %s at MET=%.1fs, Alt=%.0fm, Vel=%.0fm/s"),
+		*Def.EventId.ToString(), *Label, EventData.MET, EventData.Altitude, EventData.Velocity);
 
 	OnFlightEvent.Broadcast(EventData);
 }
@@ -153,42 +253,52 @@ bool UFlightEventDetector::IsSecondStageActive(const TArray<float>& Thrust) cons
 	return false;
 }
 
-// Individual event checks
+// --- Individual event checks ---
 
 void UFlightEventDetector::CheckIgnition(const FProcessedTelemetryData& Data)
 {
+	if (!IsEventEnabled(EFlightEvent::Ignition)) return;
 	if (IsEventLatched(EFlightEvent::Ignition)) return;
 
 	// Rising edge: any engine becomes active
 	if (Data.bAnyEngineActive && !bPrevAnyEngineActive)
 	{
-		FireEvent(EFlightEvent::Ignition, Data, TEXT("IGNITION"));
+		const FString Label = GetEventLabel(EFlightEvent::Ignition, TEXT("IGNITION"), Data);
+		FireEvent(EFlightEvent::Ignition, Data, Label);
 	}
 }
 
 void UFlightEventDetector::CheckLiftoff(const FProcessedTelemetryData& Data)
 {
+	if (!IsEventEnabled(EFlightEvent::Liftoff)) return;
 	if (IsEventLatched(EFlightEvent::Liftoff)) return;
 
-	// Altitude crosses threshold (rising edge)
-	if (Data.AltitudeASL > Config.LiftoffAltitudeThreshold && PrevAltitude <= Config.LiftoffAltitudeThreshold)
+	// Altitude above pad crosses threshold (rising edge)
+	const double AltAbovePad = Data.AltitudeASL - PadAltitude;
+	const double PrevAltAbovePad = PrevAltitude - PadAltitude;
+	if (AltAbovePad > Config.LiftoffAltitudeThreshold && PrevAltAbovePad <= Config.LiftoffAltitudeThreshold)
 	{
-		FireEvent(EFlightEvent::Liftoff, Data, TEXT("LIFTOFF"));
+		const FString Label = GetEventLabel(EFlightEvent::Liftoff, TEXT("LIFTOFF"), Data);
+		FireEvent(EFlightEvent::Liftoff, Data, Label);
 	}
 }
 
 void UFlightEventDetector::CheckMach1(const FProcessedTelemetryData& Data)
 {
+	if (!IsEventEnabled(EFlightEvent::Mach1)) return;
 	if (IsEventLatched(EFlightEvent::Mach1)) return;
 
-	if (Data.MachNumber >= 1.0 && PrevMachNumber < 1.0)
+	if (Data.MachNumber >= Config.Mach1Threshold && PrevMachNumber < Config.Mach1Threshold)
 	{
-		FireEvent(EFlightEvent::Mach1, Data, FString::Printf(TEXT("MACH 1 | %.0f m/s"), Data.VelocityMagnitude));
+		const FString DefaultLabel = FString::Printf(TEXT("MACH 1 | %.0f m/s"), Data.VelocityMagnitude);
+		const FString Label = GetEventLabel(EFlightEvent::Mach1, DefaultLabel, Data);
+		FireEvent(EFlightEvent::Mach1, Data, Label);
 	}
 }
 
 void UFlightEventDetector::CheckMaxQ(const FProcessedTelemetryData& Data)
 {
+	if (!IsEventEnabled(EFlightEvent::MaxQ)) return;
 	if (IsEventLatched(EFlightEvent::MaxQ)) return;
 
 	const double Q = Data.DynamicPressurePa;
@@ -218,8 +328,9 @@ void UFlightEventDetector::CheckMaxQ(const FProcessedTelemetryData& Data)
 
 			if (DropFraction >= Config.MaxQDropPercent && TimeSinceHigher >= Config.MaxQConfirmationWindow)
 			{
-				FireEvent(EFlightEvent::MaxQ, Data,
-					FString::Printf(TEXT("MAX Q | %.0f Pa"), MaxQPeakValue));
+				const FString DefaultLabel = FString::Printf(TEXT("MAX Q | %.0f Pa"), MaxQPeakValue);
+				const FString Label = GetEventLabel(EFlightEvent::MaxQ, DefaultLabel, Data, MaxQPeakValue);
+				FireEvent(EFlightEvent::MaxQ, Data, Label);
 			}
 		}
 	}
@@ -230,25 +341,30 @@ void UFlightEventDetector::CheckSRBEvents(const FProcessedTelemetryData& Data)
 	const bool bSRBsNow = AreSRBsActive(Data.RawData.EngineThrustPercent);
 
 	// SRB Ignition
-	if (!IsEventLatched(EFlightEvent::SRBIgnition) && bSRBsNow && !bPrevSRBsActive)
+	if (IsEventEnabled(EFlightEvent::SRBIgnition) &&
+		!IsEventLatched(EFlightEvent::SRBIgnition) && bSRBsNow && !bPrevSRBsActive)
 	{
-		FireEvent(EFlightEvent::SRBIgnition, Data, TEXT("SRB IGNITION"));
+		const FString Label = GetEventLabel(EFlightEvent::SRBIgnition, TEXT("SRB IGNITION"), Data);
+		FireEvent(EFlightEvent::SRBIgnition, Data, Label);
 	}
 
 	// SRB Separation
-	if (!IsEventLatched(EFlightEvent::SRBSeparation) && !bSRBsNow && bPrevSRBsActive)
+	if (IsEventEnabled(EFlightEvent::SRBSeparation) &&
+		!IsEventLatched(EFlightEvent::SRBSeparation) && !bSRBsNow && bPrevSRBsActive)
 	{
 		// Only fire if SRBs were previously active (not at startup)
 		if (IsEventLatched(EFlightEvent::SRBIgnition))
 		{
-			FireEvent(EFlightEvent::SRBSeparation, Data,
-				FString::Printf(TEXT("SRB SEP | %.0f km"), Data.AltitudeASL / 1000.0));
+			const FString DefaultLabel = FString::Printf(TEXT("SRB SEP | %.0f km"), Data.AltitudeASL / 1000.0);
+			const FString Label = GetEventLabel(EFlightEvent::SRBSeparation, DefaultLabel, Data);
+			FireEvent(EFlightEvent::SRBSeparation, Data, Label);
 		}
 	}
 }
 
 void UFlightEventDetector::CheckMECO(const FProcessedTelemetryData& Data)
 {
+	if (!IsEventEnabled(EFlightEvent::MECO)) return;
 	if (IsEventLatched(EFlightEvent::MECO)) return;
 
 	const bool bCoreNow = IsCoreActive(Data.RawData.EngineThrustPercent);
@@ -256,19 +372,19 @@ void UFlightEventDetector::CheckMECO(const FProcessedTelemetryData& Data)
 	// Core engines shut down (falling edge)
 	if (!bCoreNow && bPrevCoreActive && IsEventLatched(EFlightEvent::Ignition))
 	{
-		FireEvent(EFlightEvent::MECO, Data, TEXT("MECO"));
+		const FString Label = GetEventLabel(EFlightEvent::MECO, TEXT("MECO"), Data);
+		FireEvent(EFlightEvent::MECO, Data, Label);
 	}
 }
 
 void UFlightEventDetector::CheckStageSeparation(const FProcessedTelemetryData& Data)
 {
+	if (!IsEventEnabled(EFlightEvent::StageSeparation)) return;
 	if (IsEventLatched(EFlightEvent::StageSeparation)) return;
 
 	// Stage separation detected shortly after MECO
-	// We detect it as: MECO latched AND core is off AND some time has passed
 	if (IsEventLatched(EFlightEvent::MECO) && !IsCoreActive(Data.RawData.EngineThrustPercent))
 	{
-		// Check if enough time since MECO (typically ~6 seconds)
 		const FFlightEventData* MECOEvent = nullptr;
 		for (const auto& Evt : DetectedEvents)
 		{
@@ -279,53 +395,60 @@ void UFlightEventDetector::CheckStageSeparation(const FProcessedTelemetryData& D
 			}
 		}
 
-		if (MECOEvent && (Data.RawData.MissionElapsedTime - MECOEvent->MET) >= 3.0)
+		if (MECOEvent && (Data.RawData.MissionElapsedTime - MECOEvent->MET) >= Config.StageSeparationDelay)
 		{
-			FireEvent(EFlightEvent::StageSeparation, Data, TEXT("STAGE SEP"));
+			const FString Label = GetEventLabel(EFlightEvent::StageSeparation, TEXT("STAGE SEP"), Data);
+			FireEvent(EFlightEvent::StageSeparation, Data, Label);
 		}
 	}
 }
 
 void UFlightEventDetector::CheckSecondStageIgnition(const FProcessedTelemetryData& Data)
 {
+	if (!IsEventEnabled(EFlightEvent::SecondStageIgnition)) return;
 	if (IsEventLatched(EFlightEvent::SecondStageIgnition)) return;
 
 	const bool bS2Now = IsSecondStageActive(Data.RawData.EngineThrustPercent);
 
 	if (bS2Now && !bPrevSecondStageActive && IsEventLatched(EFlightEvent::MECO))
 	{
-		FireEvent(EFlightEvent::SecondStageIgnition, Data, TEXT("2ND STAGE IGN"));
+		const FString Label = GetEventLabel(EFlightEvent::SecondStageIgnition, TEXT("2ND STAGE IGN"), Data);
+		FireEvent(EFlightEvent::SecondStageIgnition, Data, Label);
 	}
 }
 
 void UFlightEventDetector::CheckFairingJettison(const FProcessedTelemetryData& Data)
 {
+	if (!IsEventEnabled(EFlightEvent::FairingJettison)) return;
 	if (IsEventLatched(EFlightEvent::FairingJettison)) return;
 
-	// Fairing jettison when dynamic pressure drops below a threshold (typically ~1 Pa)
-	// and altitude is above ~100km. This is approximate.
-	if (Data.AltitudeASL > 100000.0 && Data.DynamicPressurePa < 1.0 &&
+	if (Data.AltitudeASL > Config.FairingAltitudeThreshold &&
+		Data.DynamicPressurePa < Config.FairingQThreshold &&
 		IsEventLatched(EFlightEvent::Liftoff))
 	{
-		FireEvent(EFlightEvent::FairingJettison, Data,
-			FString::Printf(TEXT("FAIRING SEP | %.0f km"), Data.AltitudeASL / 1000.0));
+		const FString DefaultLabel = FString::Printf(TEXT("FAIRING SEP | %.0f km"), Data.AltitudeASL / 1000.0);
+		const FString Label = GetEventLabel(EFlightEvent::FairingJettison, DefaultLabel, Data);
+		FireEvent(EFlightEvent::FairingJettison, Data, Label);
 	}
 }
 
 void UFlightEventDetector::CheckSecondStageCutoff(const FProcessedTelemetryData& Data)
 {
+	if (!IsEventEnabled(EFlightEvent::SecondStageCutoff)) return;
 	if (IsEventLatched(EFlightEvent::SecondStageCutoff)) return;
 
 	const bool bS2Now = IsSecondStageActive(Data.RawData.EngineThrustPercent);
 
 	if (!bS2Now && bPrevSecondStageActive && IsEventLatched(EFlightEvent::SecondStageIgnition))
 	{
-		FireEvent(EFlightEvent::SecondStageCutoff, Data, TEXT("SECO"));
+		const FString Label = GetEventLabel(EFlightEvent::SecondStageCutoff, TEXT("SECO"), Data);
+		FireEvent(EFlightEvent::SecondStageCutoff, Data, Label);
 	}
 }
 
 void UFlightEventDetector::CheckApogee(const FProcessedTelemetryData& Data)
 {
+	if (!IsEventEnabled(EFlightEvent::Apogee)) return;
 	if (IsEventLatched(EFlightEvent::Apogee)) return;
 
 	// Vertical velocity goes from positive to negative (or zero)
@@ -333,13 +456,15 @@ void UFlightEventDetector::CheckApogee(const FProcessedTelemetryData& Data)
 	if (IsEventLatched(EFlightEvent::MECO) &&
 		Data.VerticalVelocity <= 0.0 && PrevVerticalVelocity > 0.0)
 	{
-		FireEvent(EFlightEvent::Apogee, Data,
-			FString::Printf(TEXT("APOGEE | %.1f km"), Data.AltitudeASL / 1000.0));
+		const FString DefaultLabel = FString::Printf(TEXT("APOGEE | %.1f km"), Data.AltitudeASL / 1000.0);
+		const FString Label = GetEventLabel(EFlightEvent::Apogee, DefaultLabel, Data);
+		FireEvent(EFlightEvent::Apogee, Data, Label);
 	}
 }
 
 void UFlightEventDetector::CheckReentry(const FProcessedTelemetryData& Data)
 {
+	if (!IsEventEnabled(EFlightEvent::ReentryStart)) return;
 	if (IsEventLatched(EFlightEvent::ReentryStart)) return;
 
 	// Reentry: dynamic pressure increases above threshold while descending
@@ -347,12 +472,14 @@ void UFlightEventDetector::CheckReentry(const FProcessedTelemetryData& Data)
 		Data.DynamicPressurePa > Config.ReentryQThreshold &&
 		PrevDynamicPressure <= Config.ReentryQThreshold)
 	{
-		FireEvent(EFlightEvent::ReentryStart, Data, TEXT("REENTRY"));
+		const FString Label = GetEventLabel(EFlightEvent::ReentryStart, TEXT("REENTRY"), Data);
+		FireEvent(EFlightEvent::ReentryStart, Data, Label);
 	}
 }
 
 void UFlightEventDetector::CheckChuteDeployment(const FProcessedTelemetryData& Data)
 {
+	if (!IsEventEnabled(EFlightEvent::ChuteDeployment)) return;
 	if (IsEventLatched(EFlightEvent::ChuteDeployment)) return;
 
 	// Altitude drops below threshold while descending
@@ -361,24 +488,29 @@ void UFlightEventDetector::CheckChuteDeployment(const FProcessedTelemetryData& D
 		PrevAltitude > Config.ChuteDeployAltitude &&
 		Data.VerticalVelocity < 0.0)
 	{
-		FireEvent(EFlightEvent::ChuteDeployment, Data, TEXT("CHUTE DEPLOY"));
+		const FString Label = GetEventLabel(EFlightEvent::ChuteDeployment, TEXT("CHUTE DEPLOY"), Data);
+		FireEvent(EFlightEvent::ChuteDeployment, Data, Label);
 	}
 }
 
 void UFlightEventDetector::CheckSplashdown(const FProcessedTelemetryData& Data)
 {
+	if (!IsEventEnabled(EFlightEvent::Splashdown)) return;
 	if (IsEventLatched(EFlightEvent::Splashdown)) return;
 
 	if (IsEventLatched(EFlightEvent::Apogee) &&
 		Data.AltitudeASL <= Config.SplashdownAltitude &&
 		PrevAltitude > Config.SplashdownAltitude)
 	{
-		FireEvent(EFlightEvent::Splashdown, Data, TEXT("SPLASHDOWN"));
+		const FString Label = GetEventLabel(EFlightEvent::Splashdown, TEXT("SPLASHDOWN"), Data);
+		FireEvent(EFlightEvent::Splashdown, Data, Label);
 	}
 }
 
 void UFlightEventDetector::CheckAltitudeMarkers(const FProcessedTelemetryData& Data)
 {
+	if (!IsEventEnabled(EFlightEvent::AltitudeMarker)) return;
+
 	// Only fire markers during ascent
 	if (Data.VerticalVelocity <= 0.0) return;
 	if (Data.AltitudeASL <= 0.0) return;
@@ -403,7 +535,17 @@ void UFlightEventDetector::CheckAltitudeMarkers(const FProcessedTelemetryData& D
 		EventData.Velocity = Data.VelocityMagnitude;
 		EventData.ECEFPosition = Data.VehicleECEFPosition;
 
-		if (MarkerAlt >= 1000.0)
+		// Check for label override
+		const FBuiltinEventOverride* Override = nullptr;
+		for (const auto& Ovr : Config.EventOverrides)
+		{
+			if (Ovr.EventType == EFlightEvent::AltitudeMarker) { Override = &Ovr; break; }
+		}
+		if (Override && !Override->LabelOverride.IsEmpty())
+		{
+			EventData.EventLabel = SubstituteTokens(Override->LabelOverride, Data, MarkerAlt);
+		}
+		else if (MarkerAlt >= 1000.0)
 		{
 			EventData.EventLabel = FString::Printf(TEXT("%.0f km"), MarkerAlt / 1000.0);
 		}
@@ -418,5 +560,50 @@ void UFlightEventDetector::CheckAltitudeMarkers(const FProcessedTelemetryData& D
 			*EventData.EventLabel, EventData.MET);
 
 		OnFlightEvent.Broadcast(EventData);
+	}
+}
+
+void UFlightEventDetector::CheckCustomEvents(const FProcessedTelemetryData& Data)
+{
+	for (const FCustomEventDefinition& Def : Config.CustomEvents)
+	{
+		// Skip disabled
+		if (!Def.bEnabled) continue;
+
+		// Skip if no EventId
+		if (Def.EventId.IsNone()) continue;
+
+		// Skip if already latched
+		if (CustomLatchedEvents.Contains(Def.EventId)) continue;
+
+		// Check prerequisite
+		if (Def.Prerequisite != EFlightEvent::MAX && !IsEventLatched(Def.Prerequisite))
+		{
+			continue;
+		}
+
+		const double CurrentValue = GetMetricValue(Def.Metric, Data);
+		const double* PrevValuePtr = CustomPrevValues.Find(Def.EventId);
+		const double PrevValue = PrevValuePtr ? *PrevValuePtr : CurrentValue;
+
+		// Edge detection
+		bool bFired = false;
+		if (Def.Direction == ECustomEventDirection::RisingEdge)
+		{
+			bFired = (CurrentValue >= Def.Threshold && PrevValue < Def.Threshold);
+		}
+		else // FallingEdge
+		{
+			bFired = (CurrentValue <= Def.Threshold && PrevValue > Def.Threshold);
+		}
+
+		if (bFired)
+		{
+			const FString Label = SubstituteTokens(Def.Label, Data, CurrentValue);
+			FireCustomEvent(Def, Data, Label);
+		}
+
+		// Always update previous value
+		CustomPrevValues.Add(Def.EventId, CurrentValue);
 	}
 }

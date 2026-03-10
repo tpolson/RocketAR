@@ -57,9 +57,20 @@ private:
 	void CheckSplashdown(const FProcessedTelemetryData& Data);
 	void CheckAltitudeMarkers(const FProcessedTelemetryData& Data);
 
+	void CheckCustomEvents(const FProcessedTelemetryData& Data);
+
 	void FireEvent(EFlightEvent EventType, const FProcessedTelemetryData& Data, const FString& Label);
+	void FireCustomEvent(const FCustomEventDefinition& Def, const FProcessedTelemetryData& Data, const FString& Label);
 	bool IsEventLatched(EFlightEvent EventType) const;
 	void LatchEvent(EFlightEvent EventType);
+
+	// Data-driven event enable/disable and label helpers
+	bool IsEventEnabled(EFlightEvent EventType) const;
+	FString GetEventLabel(EFlightEvent EventType, const FString& Default, const FProcessedTelemetryData& Data, double ExtraValue = 0.0) const;
+	static FString SubstituteTokens(const FString& Template, const FProcessedTelemetryData& Data, double ExtraValue = 0.0);
+
+	// Helper: get metric value for custom events
+	static double GetMetricValue(ECustomEventMetric Metric, const FProcessedTelemetryData& Data);
 
 	// Helper: check if specific engine group is active
 	bool AreSRBsActive(const TArray<float>& Thrust) const;
@@ -71,6 +82,12 @@ private:
 
 	// Detected events log
 	TArray<FFlightEventData> DetectedEvents;
+
+	// Custom event latches (by EventId since all share EFlightEvent::Custom)
+	TSet<FName> CustomLatchedEvents;
+
+	// Previous metric values for custom event edge detection
+	TMap<FName, double> CustomPrevValues;
 
 	// Previous frame state for edge detection
 	bool bPrevAnyEngineActive = false;
@@ -92,6 +109,9 @@ private:
 	// Altitude marker tracking
 	double LastAltitudeMarker = 0.0;
 	double HighestAltitudeMarker = 0.0;
+
+	// Pad altitude (recorded on first frame for relative liftoff detection)
+	double PadAltitude = 0.0;
 
 	// Frame tracking
 	bool bFirstFrame = true;
