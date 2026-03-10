@@ -44,12 +44,12 @@ void UBannerManager::QueueBanner(const FFlightEventData& EventData, const FVecto
 	Pending.EventData = EventData;
 	Pending.TrajectoryAtTrigger = TrajectoryAtTrigger;
 	Pending.SpawnPosition = LastVehicleUEPosition;
-	Pending.TriggerWorldTime = World->GetTimeSeconds() + TriggerTimeOffset;
+	Pending.TriggerWorldTime = World->GetTimeSeconds() + TriggerTimeOffset - AnticipationSeconds;
 
 	PendingBanners.Add(Pending);
 
-	UE_LOG(LogRocketAR, Log, TEXT("BannerManager: Queued banner '%s' (offset=%.2fs)"),
-		*EventData.EventLabel, TriggerTimeOffset);
+	UE_LOG(LogRocketAR, Log, TEXT("BannerManager: Queued banner '%s' (offset=%.2fs, anticipation=%.2fs)"),
+		*EventData.EventLabel, TriggerTimeOffset, AnticipationSeconds);
 }
 
 ABannerActor* UBannerManager::SpawnBanner(const FFlightEventData& EventData)
@@ -87,12 +87,16 @@ ABannerActor* UBannerManager::SpawnBannerFromQueue(const FPendingBanner& Pending
 		return nullptr;
 	}
 
+	// Determine type early so we can pick the right spawn offset
+	const bool bIsMarker = (Pending.EventData.EventType == EFlightEvent::AltitudeMarker);
+
 	// Attach to rocket mount point — banner moves with the rocket
 	if (AttachTarget)
 	{
 		Banner->AttachToComponent(AttachTarget, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
-		// Local position = zero (at rocket center), local rotation = zero (flat disk)
-		Banner->SetActorRelativeLocation(FVector::ZeroVector);
+		// Offset above vehicle center (toward nose) so camera flies past banners
+		const float SpawnZ = bIsMarker ? MarkerSpawnZOffset : BannerSpawnZOffset;
+		Banner->SetActorRelativeLocation(FVector(0.0f, 0.0f, SpawnZ));
 		Banner->SetActorRelativeRotation(FRotator::ZeroRotator);
 	}
 	else
@@ -104,9 +108,6 @@ ABannerActor* UBannerManager::SpawnBannerFromQueue(const FPendingBanner& Pending
 	Banner->LifetimeSeconds = SlideDuration;
 	Banner->FadeOutDuration = BannerFadeOutDuration;
 	Banner->FadeInDuration = FadeInDuration;
-
-	// Use different geometry for altitude markers vs event banners
-	const bool bIsMarker = (Pending.EventData.EventType == EFlightEvent::AltitudeMarker);
 	const float Radius = bIsMarker ? MarkerDiskRadius : BannerDiskRadius;
 	const float Thickness = bIsMarker ? MarkerDiskThickness : BannerDiskThickness;
 

@@ -111,6 +111,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Slide")
 	float FadeInDuration = 0.3f;
 
+	/** Local Z offset above vehicle center for event banners (cm) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Slide")
+	float BannerSpawnZOffset = 8000.0f;
+
+	/** Local Z offset above vehicle center for altitude markers (cm) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Slide")
+	float MarkerSpawnZOffset = 6000.0f;
+
+	/** Seconds before trigger time to begin spawn (anticipation) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Slide")
+	float AnticipationSeconds = 1.5f;
+
 	/** Whether to show on-screen debug messages when banners spawn */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Debug")
 	bool bShowDebugMessages = true;

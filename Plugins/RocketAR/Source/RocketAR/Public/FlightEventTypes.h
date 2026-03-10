@@ -70,6 +70,10 @@ struct ROCKETAR_API FFlightEventConfig
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Events")
 	float AltitudeMarkerMinSpacing = 5000.0f;
 
+	/** Seconds of look-ahead for predictive altitude marker firing */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Events")
+	float AltitudeMarkerAnticipation = 2.0f;
+
 	/** Reentry dynamic pressure threshold (Pa) — reentry starts when Q rises above this */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Events")
 	float ReentryQThreshold = 1000.0f;

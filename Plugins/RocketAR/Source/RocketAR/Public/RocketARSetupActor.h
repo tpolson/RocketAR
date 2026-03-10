@@ -135,6 +135,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner|Slide")
 	float BannerFadeInDuration = 0.3f;
 
+	/** Local Z offset above vehicle center for event banners (cm) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner|Slide")
+	float BannerSpawnZOffset = 8000.0f;
+
+	/** Local Z offset above vehicle center for altitude markers (cm) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner|Slide")
+	float MarkerSpawnZOffset = 6000.0f;
+
+	/** Seconds before trigger time to begin spawn (anticipation) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner|Slide")
+	float AnticipationSeconds = 1.5f;
+
 	// --- Altitude Marker Configuration ---
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Marker")
@@ -155,6 +167,10 @@ public:
 	/** Altitude marker color */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Marker")
 	FLinearColor MarkerColor = FLinearColor(0.2f, 0.8f, 1.0f, 1.0f); // cyan
+
+	/** Seconds of look-ahead for predictive altitude marker firing */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Marker")
+	float AltitudeMarkerAnticipation = 2.0f;
 
 	// --- Dev / Debug ---
 

@@ -386,8 +386,9 @@ void UFlightEventDetector::CheckAltitudeMarkers(const FProcessedTelemetryData& D
 	const float Interval = Config.AltitudeMarkerInterval;
 	const float MinSpacing = Config.AltitudeMarkerMinSpacing;
 
-	// Determine which marker we just crossed
-	const double MarkerAlt = FMath::FloorToDouble(Data.AltitudeASL / Interval) * Interval;
+	// Use predicted altitude (current + velocity * look-ahead) to fire markers early
+	const double PredictedAlt = Data.AltitudeASL + Data.VerticalVelocity * Config.AltitudeMarkerAnticipation;
+	const double MarkerAlt = FMath::FloorToDouble(PredictedAlt / Interval) * Interval;
 
 	if (MarkerAlt > HighestAltitudeMarker && MarkerAlt > 0.0 &&
 		(MarkerAlt - LastAltitudeMarker) >= MinSpacing)

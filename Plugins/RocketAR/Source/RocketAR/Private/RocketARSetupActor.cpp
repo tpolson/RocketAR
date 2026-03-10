@@ -345,6 +345,9 @@ void ARocketARSetupActor::WireSubsystems()
 		BannerManager->SlideSpeed = SlideSpeed;
 		BannerManager->SlideDuration = SlideDuration;
 		BannerManager->FadeInDuration = BannerFadeInDuration;
+		BannerManager->BannerSpawnZOffset = BannerSpawnZOffset;
+		BannerManager->MarkerSpawnZOffset = MarkerSpawnZOffset;
+		BannerManager->AnticipationSeconds = AnticipationSeconds;
 	}
 
 	// Wire event detector — setup actor is sole handler for event→banner/HUD
@@ -362,10 +365,11 @@ void ARocketARSetupActor::WireSubsystems()
 		BannerManager->bShowDebugMessages = bShowDebugMessages;
 	}
 
-	// Sync altitude marker interval
+	// Sync altitude marker config
 	if (EventDetector)
 	{
 		EventDetector->Config.AltitudeMarkerInterval = AltitudeMarkerInterval;
+		EventDetector->Config.AltitudeMarkerAnticipation = AltitudeMarkerAnticipation;
 	}
 }
 
@@ -477,6 +481,9 @@ void ARocketARSetupActor::Tick(float DeltaTime)
 		BannerManager->SlideSpeed = SlideSpeed;
 		BannerManager->SlideDuration = SlideDuration;
 		BannerManager->FadeInDuration = BannerFadeInDuration;
+		BannerManager->BannerSpawnZOffset = BannerSpawnZOffset;
+		BannerManager->MarkerSpawnZOffset = MarkerSpawnZOffset;
+		BannerManager->AnticipationSeconds = AnticipationSeconds;
 	}
 
 	// Live-sync marker geometry and debug flag
@@ -495,10 +502,11 @@ void ARocketARSetupActor::Tick(float DeltaTime)
 		HUDOverlay->bShowEvents = bShowHUDEvents;
 	}
 
-	// Live-sync altitude marker interval to event config
+	// Live-sync altitude marker config to event detector
 	if (EventDetector)
 	{
 		EventDetector->Config.AltitudeMarkerInterval = AltitudeMarkerInterval;
+		EventDetector->Config.AltitudeMarkerAnticipation = AltitudeMarkerAnticipation;
 	}
 
 	// Toggle dev visualization when the bool changes
