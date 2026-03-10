@@ -25,6 +25,12 @@ public:
 	/** Call each frame with current telemetry */
 	void UpdateTelemetry(const FProcessedTelemetryData& Data);
 
+	/** Whether to draw the bottom-left telemetry readout */
+	bool bShowTelemetry = true;
+
+	/** Whether to draw the top-center event text */
+	bool bShowEvents = true;
+
 private:
 	// Current telemetry values
 	double CurrentAltitude = 0.0;

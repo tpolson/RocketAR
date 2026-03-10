@@ -161,8 +161,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev")
 	bool bDevVisualization = true;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev")
-	bool bShowHUD = true;
+	/** Show bottom-left MET/ALT/VEL telemetry box */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD")
+	bool bShowHUDTelemetry = true;
+
+	/** Show top-center event text */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD")
+	bool bShowHUDEvents = true;
+
+	/** Show top-left debug messages (BANNER:/ALTITUDE: spawn text) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD")
+	bool bShowDebugMessages = true;
 
 	/** Freeze-frame mode: places rocket at TestAltitude with a test banner. No CSV playback. Tweak visuals live. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev|Freeze Frame")

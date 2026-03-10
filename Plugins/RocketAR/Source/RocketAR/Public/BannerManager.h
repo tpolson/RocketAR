@@ -111,6 +111,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Slide")
 	float FadeInDuration = 0.3f;
 
+	/** Whether to show on-screen debug messages when banners spawn */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Debug")
+	bool bShowDebugMessages = true;
+
 private:
 	UFUNCTION()
 	void OnFlightEventDetected(const FFlightEventData& EventData);

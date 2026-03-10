@@ -17,7 +17,7 @@ void ARocketARHUD::DrawHUD()
 	if (!HUDFont) return;
 
 	// --- Bottom-left telemetry readout ---
-	if (bHasTelemetry)
+	if (bHasTelemetry && bShowTelemetry)
 	{
 		const FString METStr = FString::Printf(TEXT("MET  %s"), *FormatMET(CurrentMET));
 		const FString AltStr = FString::Printf(TEXT("ALT  %s"), *FormatAltitude(CurrentAltitude));
@@ -56,7 +56,7 @@ void ARocketARHUD::DrawHUD()
 	}
 
 	// --- Event name display (center-top, with fade) ---
-	if (EventDisplayTimer > 0.0f)
+	if (EventDisplayTimer > 0.0f && bShowEvents)
 	{
 		EventDisplayTimer -= DeltaTime;
 

@@ -142,9 +142,15 @@ void URocketARInputComponent::OnToggleDevVis()
 void URocketARInputComponent::OnToggleHUD()
 {
 	if (!SetupActor) return;
-	SetupActor->bShowHUD = !SetupActor->bShowHUD;
-	UE_LOG(LogRocketAR, Log, TEXT("Input: HUD = %s"),
-		SetupActor->bShowHUD ? TEXT("ON") : TEXT("OFF"));
+
+	// Toggle all three HUD elements together
+	const bool bAllOn = SetupActor->bShowHUDTelemetry && SetupActor->bShowHUDEvents && SetupActor->bShowDebugMessages;
+	const bool bNewState = !bAllOn;
+	SetupActor->bShowHUDTelemetry = bNewState;
+	SetupActor->bShowHUDEvents = bNewState;
+	SetupActor->bShowDebugMessages = bNewState;
+	UE_LOG(LogRocketAR, Log, TEXT("Input: HUD (all) = %s"),
+		bNewState ? TEXT("ON") : TEXT("OFF"));
 }
 
 void URocketARInputComponent::OnToggleStats()

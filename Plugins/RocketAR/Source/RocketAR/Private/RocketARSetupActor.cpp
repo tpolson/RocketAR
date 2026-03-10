@@ -293,8 +293,10 @@ void ARocketARSetupActor::SetupFreezeFrame()
 	}
 
 	// Update HUD
-	if (HUDOverlay && bShowHUD)
+	if (HUDOverlay)
 	{
+		HUDOverlay->bShowTelemetry = bShowHUDTelemetry;
+		HUDOverlay->bShowEvents = bShowHUDEvents;
 		FProcessedTelemetryData FakeData;
 		FakeData.AltitudeASL = FreezeFrameAltitude;
 		FakeData.VelocityMagnitude = 500.0;
@@ -351,12 +353,13 @@ void ARocketARSetupActor::WireSubsystems()
 		EventDetector->OnFlightEvent.AddDynamic(this, &ARocketARSetupActor::OnFlightEventDetected);
 	}
 
-	// Sync marker geometry to banner manager
+	// Sync marker geometry and debug flag to banner manager
 	if (BannerManager)
 	{
 		BannerManager->MarkerDiskRadius = MarkerDiskRadius;
 		BannerManager->MarkerDiskThickness = MarkerDiskThickness;
 		BannerManager->MarkerColor = MarkerColor;
+		BannerManager->bShowDebugMessages = bShowDebugMessages;
 	}
 
 	// Sync altitude marker interval
@@ -423,8 +426,10 @@ void ARocketARSetupActor::OnTelemetryUpdated(const FProcessedTelemetryData& Data
 	}
 
 	// Update HUD overlay
-	if (HUDOverlay && bShowHUD)
+	if (HUDOverlay)
 	{
+		HUDOverlay->bShowTelemetry = bShowHUDTelemetry;
+		HUDOverlay->bShowEvents = bShowHUDEvents;
 		HUDOverlay->UpdateTelemetry(Data);
 	}
 }
@@ -446,7 +451,7 @@ void ARocketARSetupActor::Tick(float DeltaTime)
 	}
 
 	// Retry HUD setup if PC wasn't ready during BeginPlay
-	if (!HUDOverlay && bShowHUD)
+	if (!HUDOverlay && (bShowHUDTelemetry || bShowHUDEvents))
 	{
 		SetupHUD();
 	}
@@ -474,12 +479,20 @@ void ARocketARSetupActor::Tick(float DeltaTime)
 		BannerManager->FadeInDuration = BannerFadeInDuration;
 	}
 
-	// Live-sync marker geometry
+	// Live-sync marker geometry and debug flag
 	if (BannerManager)
 	{
 		BannerManager->MarkerDiskRadius = MarkerDiskRadius;
 		BannerManager->MarkerDiskThickness = MarkerDiskThickness;
 		BannerManager->MarkerColor = MarkerColor;
+		BannerManager->bShowDebugMessages = bShowDebugMessages;
+	}
+
+	// Live-sync HUD flags
+	if (HUDOverlay)
+	{
+		HUDOverlay->bShowTelemetry = bShowHUDTelemetry;
+		HUDOverlay->bShowEvents = bShowHUDEvents;
 	}
 
 	// Live-sync altitude marker interval to event config
@@ -583,7 +596,7 @@ void ARocketARSetupActor::OnFlightEventDetected(const FFlightEventData& EventDat
 	}
 
 	// Show event on HUD overlay
-	if (HUDOverlay && bShowHUD)
+	if (HUDOverlay && bShowHUDEvents)
 	{
 		HUDOverlay->ShowEvent(EventData);
 	}

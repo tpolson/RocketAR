@@ -128,15 +128,19 @@ ABannerActor* UBannerManager::SpawnBannerFromQueue(const FPendingBanner& Pending
 	ActiveBanners.Add(Banner);
 	SET_DWORD_STAT(STAT_ActiveBanners, ActiveBanners.Num());
 
-	UE_LOG(LogRocketAR, Log, TEXT("BannerManager: Spawned banner '%s' at (%.0f, %.0f, %.0f) slide=%.0f cm/s (total: %d)"),
+	const TCHAR* TypeLabel = bIsMarker ? TEXT("altitude marker") : TEXT("banner");
+	UE_LOG(LogRocketAR, Log, TEXT("BannerManager: Spawned %s '%s' at (%.0f, %.0f, %.0f) slide=%.0f cm/s (total: %d)"),
+		TypeLabel,
 		*Pending.EventData.EventLabel,
 		Pending.SpawnPosition.X, Pending.SpawnPosition.Y, Pending.SpawnPosition.Z,
 		SlideSpeed, ActiveBanners.Num());
 
-	if (GEngine)
+	if (GEngine && bShowDebugMessages)
 	{
+		const TCHAR* DebugPrefix = bIsMarker ? TEXT("ALTITUDE") : TEXT("BANNER");
 		GEngine->AddOnScreenDebugMessage(-1, 10.0f, FColor::Yellow,
-			FString::Printf(TEXT("BANNER: %s at (%.0f, %.0f, %.0f)"),
+			FString::Printf(TEXT("%s: %s at (%.0f, %.0f, %.0f)"),
+				DebugPrefix,
 				*Pending.EventData.EventLabel,
 				Pending.SpawnPosition.X, Pending.SpawnPosition.Y, Pending.SpawnPosition.Z));
 	}
