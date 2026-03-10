@@ -150,9 +150,9 @@ void ABannerActor::InitBanner(
 		TextComponent->SetRelativeRotation(FRotator(90.0f, 0.0f, 0.0f));
 	}
 
-	// Set wireframe color AFTER material setup so SetMaterial doesn't reset it
 	BannerMesh->bOverrideWireframeColor = true;
 	BannerMesh->WireframeColorOverride = InWireframeColor;
+	BannerMesh->MarkRenderStateDirty();
 
 	// Start in spawn animation state (opacity fade-in)
 	State = EBannerState::SpawnAnimation;
