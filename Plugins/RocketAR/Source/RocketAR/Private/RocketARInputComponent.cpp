@@ -68,11 +68,10 @@ void URocketARInputComponent::SetupBindings(ARocketARSetupActor* InSetupActor)
 	InputComp->BindKey(EKeys::F1, IE_Pressed, this, &URocketARInputComponent::OnToggleHUD);
 	InputComp->BindKey(EKeys::F2, IE_Pressed, this, &URocketARInputComponent::OnToggleStats);
 	InputComp->BindKey(EKeys::Tab, IE_Pressed, this, &URocketARInputComponent::OnCycleBanner);
-	InputComp->BindKey(EKeys::F3, IE_Pressed, this, &URocketARInputComponent::OnToggleAlphaPreview);
 
 	bBindingsReady = true;
 	PrimaryComponentTick.SetTickFunctionEnable(false);
-	UE_LOG(LogRocketAR, Log, TEXT("Input bindings set up (Space, Arrows, [], R, D, F1, F2, F3, Tab)"));
+	UE_LOG(LogRocketAR, Log, TEXT("Input bindings set up (Space, Arrows, [], R, D, F1, F2, Tab)"));
 }
 
 void URocketARInputComponent::OnTogglePlayPause()
@@ -181,14 +180,6 @@ void URocketARInputComponent::OnToggleStats()
 	{
 		GEngine->Exec(GetWorld(), TEXT("stat RocketAR"));
 	}
-}
-
-void URocketARInputComponent::OnToggleAlphaPreview()
-{
-	if (!SetupActor) return;
-	SetupActor->bShowAlphaPreview = !SetupActor->bShowAlphaPreview;
-	UE_LOG(LogRocketAR, Log, TEXT("Input: Alpha Preview = %s"),
-		SetupActor->bShowAlphaPreview ? TEXT("ON") : TEXT("OFF"));
 }
 
 void URocketARInputComponent::OnCycleBanner()

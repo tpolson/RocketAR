@@ -2,8 +2,37 @@
 #include "RocketARModule.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Materials/Material.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialExpressionVectorParameter.h"
 #include "UObject/ConstructorHelpers.h"
+
+/** Create a shared additive-blend material that is visible in the viewport
+ *  but does NOT write to the scene alpha channel (preserves broadcast key). */
+static UMaterial* GetDevAdditiveMaterial()
+{
+	static TWeakObjectPtr<UMaterial> CachedMat;
+	if (CachedMat.IsValid()) return CachedMat.Get();
+
+	UMaterial* Mat = NewObject<UMaterial>(GetTransientPackage(), TEXT("DevAdditiveMat"), RF_Transient);
+	Mat->BlendMode = BLEND_Additive;
+	Mat->SetShadingModel(MSM_Unlit);
+	Mat->TwoSided = true;
+
+	auto* ColorParam = NewObject<UMaterialExpressionVectorParameter>(Mat);
+	ColorParam->ParameterName = TEXT("Color");
+	ColorParam->DefaultValue = FLinearColor(0.1f, 0.2f, 0.8f, 1.0f);
+	Mat->GetExpressionCollection().AddExpression(ColorParam);
+
+#if WITH_EDITOR
+	Mat->GetEditorOnlyData()->EmissiveColor.Connect(0, ColorParam);
+#endif
+
+	Mat->PreEditChange(nullptr);
+	Mat->PostEditChange();
+	CachedMat = Mat;
+	return Mat;
+}
 
 ADevVisualizationActor::ADevVisualizationActor()
 {
@@ -60,12 +89,11 @@ void ADevVisualizationActor::BeginPlay()
 	// Default position — will be overridden by SetEarthTransform() from setup actor
 	EarthMesh->SetWorldLocation(FVector(0.0, 0.0, -EarthRadiusCm));
 
-	// Create a simple blue material for Earth
-	UMaterialInterface* BaseMat = LoadObject<UMaterialInterface>(nullptr,
-		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
-	if (BaseMat)
+	// Additive materials — visible in viewport but don't write scene alpha (preserves broadcast key)
+	UMaterial* AdditiveMat = GetDevAdditiveMaterial();
+	if (AdditiveMat)
 	{
-		EarthMaterial = UMaterialInstanceDynamic::Create(BaseMat, this);
+		EarthMaterial = UMaterialInstanceDynamic::Create(AdditiveMat, this);
 		if (EarthMaterial)
 		{
 			EarthMaterial->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.1f, 0.2f, 0.8f, 1.0f));
@@ -76,9 +104,9 @@ void ADevVisualizationActor::BeginPlay()
 	// Apply rocket dimensions (configurable via RocketHeight/RocketRadius)
 	UpdateRocketDimensions();
 
-	if (BaseMat)
+	if (AdditiveMat)
 	{
-		RocketMaterial = UMaterialInstanceDynamic::Create(BaseMat, this);
+		RocketMaterial = UMaterialInstanceDynamic::Create(AdditiveMat, this);
 		if (RocketMaterial)
 		{
 			RocketMaterial->SetVectorParameterValue(TEXT("Color"), FLinearColor(1.0f, 0.3f, 0.1f, 1.0f));

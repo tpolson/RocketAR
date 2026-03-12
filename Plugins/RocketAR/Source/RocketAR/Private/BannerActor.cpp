@@ -40,9 +40,10 @@ static UMaterial* GetBannerTranslucentMaterial()
 	OpacityParam->DefaultValue = 1.0f;
 	Mat->GetExpressionCollection().AddExpression(OpacityParam);
 
-	// Texture parameter (defaults to white when unbound)
+	// Texture parameter — explicit white default so unbound texture gives (1,1,1,1)
 	auto* TexParam = NewObject<UMaterialExpressionTextureSampleParameter2D>(Mat);
 	TexParam->ParameterName = TEXT("BannerTexture");
+	TexParam->Texture = LoadObject<UTexture2D>(nullptr, TEXT("/Engine/EngineResources/WhiteSquareTexture"));
 	Mat->GetExpressionCollection().AddExpression(TexParam);
 
 	// Multiply: TexRGB * Color → BaseColor
@@ -90,9 +91,10 @@ static UMaterial* GetBannerOpaqueMaterial()
 	ColorParam->DefaultValue = FLinearColor(1.0f, 1.0f, 0.0f, 1.0f);
 	Mat->GetExpressionCollection().AddExpression(ColorParam);
 
-	// Texture parameter (defaults to white when unbound)
+	// Texture parameter — explicit white default so unbound texture gives (1,1,1,1)
 	auto* TexParam = NewObject<UMaterialExpressionTextureSampleParameter2D>(Mat);
 	TexParam->ParameterName = TEXT("BannerTexture");
+	TexParam->Texture = LoadObject<UTexture2D>(nullptr, TEXT("/Engine/EngineResources/WhiteSquareTexture"));
 	Mat->GetExpressionCollection().AddExpression(TexParam);
 
 	// Multiply: TexRGB * Color → BaseColor

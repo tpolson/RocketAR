@@ -56,9 +56,6 @@ private:
 	UFUNCTION()
 	void OnCycleBanner();
 
-	UFUNCTION()
-	void OnToggleAlphaPreview();
-
 	UPROPERTY()
 	ARocketARSetupActor* SetupActor = nullptr;
 

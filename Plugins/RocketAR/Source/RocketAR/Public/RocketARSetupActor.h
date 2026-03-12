@@ -215,10 +215,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev Visualization")
 	bool bDevOpaqueBanners = false;
 
-	/** Preview alpha channel as grayscale (white=opaque, black=transparent) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev Visualization")
-	bool bShowAlphaPreview = false;
-
 	/** Rocket body height in meters (pivot at engine end, grows upward). SLS Block 1 = 98m. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev Visualization")
 	float RocketHeight = 98.0f;
@@ -317,10 +313,6 @@ private:
 	bool bDevVisLastState = false;
 	bool bCameraViewSet = false;
 	bool bDevCameraLastState = false;
-	bool bAlphaPreviewLastState = false;
-
-	UPROPERTY()
-	UMaterialInterface* AlphaPreviewMaterial = nullptr;
 	float FreezeFrameAltitudeLast = -1.0f;
 	FString FreezeFrameEventLabelLast;
 

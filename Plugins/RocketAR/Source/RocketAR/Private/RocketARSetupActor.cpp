@@ -19,10 +19,6 @@
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 
-#include "Materials/Material.h"
-#include "Materials/MaterialExpressionSceneTexture.h"
-#include "Materials/MaterialExpressionComponentMask.h"
-
 #if WITH_CESIUM
 #include "CesiumGeoreference.h"
 #endif
@@ -84,29 +80,6 @@ void ARocketARSetupActor::BeginPlay()
 	if (bFreezeFrameMode)
 	{
 		SetupFreezeFrame();
-	}
-
-	// Create alpha preview post-process material (dynamic, no asset needed)
-	{
-		UMaterial* AlphaMat = NewObject<UMaterial>(this, TEXT("M_AlphaPreview"));
-		AlphaMat->MaterialDomain = EMaterialDomain::MD_PostProcess;
-		AlphaMat->BlendableLocation = EBlendableLocation::BL_AfterTonemapping;
-
-		UMaterialExpressionSceneTexture* SceneTex = NewObject<UMaterialExpressionSceneTexture>(AlphaMat);
-		SceneTex->SceneTextureId = ESceneTextureId::PPI_PostProcessInput0;
-		AlphaMat->GetExpressionCollection().AddExpression(SceneTex);
-
-		UMaterialExpressionComponentMask* AlphaMask = NewObject<UMaterialExpressionComponentMask>(AlphaMat);
-		AlphaMask->R = false;
-		AlphaMask->G = false;
-		AlphaMask->B = false;
-		AlphaMask->A = true;
-		AlphaMask->Input.Connect(0, SceneTex);
-		AlphaMat->GetExpressionCollection().AddExpression(AlphaMask);
-
-		AlphaMat->GetEditorOnlyData()->EmissiveColor.Connect(0, AlphaMask);
-		AlphaMat->PostEditChange();
-		AlphaPreviewMaterial = AlphaMat;
 	}
 
 	UE_LOG(LogRocketAR, Log, TEXT("RocketAR Setup Actor: Initialization complete"));
@@ -652,33 +625,6 @@ void ARocketARSetupActor::Tick(float DeltaTime)
 			}
 		}
 		bDevCameraLastState = bUseDevCamera;
-	}
-
-	// Toggle alpha preview post-process on active camera
-	if (bShowAlphaPreview != bAlphaPreviewLastState)
-	{
-		ACineCameraActor* ActiveCam = (bUseDevCamera && DevCameraActor) ? DevCameraActor : CameraActor;
-		if (ActiveCam)
-		{
-			UCineCameraComponent* CineComp = ActiveCam->GetCineCameraComponent();
-			if (CineComp && AlphaPreviewMaterial)
-			{
-				if (bShowAlphaPreview)
-				{
-					CineComp->PostProcessSettings.AddBlendable(
-						TScriptInterface<IBlendableInterface>(AlphaPreviewMaterial), 1.0f);
-					CineComp->PostProcessSettings.bOverride_AutoExposureBias = true;
-					UE_LOG(LogRocketAR, Log, TEXT("Alpha preview: ON"));
-				}
-				else
-				{
-					CineComp->PostProcessSettings.RemoveBlendable(
-						TScriptInterface<IBlendableInterface>(AlphaPreviewMaterial));
-					UE_LOG(LogRocketAR, Log, TEXT("Alpha preview: OFF"));
-				}
-			}
-		}
-		bAlphaPreviewLastState = bShowAlphaPreview;
 	}
 
 	// Live-sync freeze frame — re-run when altitude or label changes
