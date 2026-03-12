@@ -203,14 +203,21 @@ bool ACSVTelemetryProvider::ValidateRows()
 		return false;
 	}
 
-	// Check monotonic MET
-	for (int32 i = 1; i < Rows.Num(); ++i)
+	// Remove non-monotonic MET rows (would break Hermite interpolator binary search)
+	int32 RemovedCount = 0;
+	for (int32 i = Rows.Num() - 1; i >= 1; --i)
 	{
 		if (Rows[i].MET <= Rows[i - 1].MET)
 		{
-			UE_LOG(LogRocketAR, Warning, TEXT("CSV: non-monotonic MET at row %d (%.3f <= %.3f)"),
+			UE_LOG(LogRocketAR, Warning, TEXT("CSV row %d removed: non-monotonic MET (%.3f <= %.3f)"),
 				i, Rows[i].MET, Rows[i - 1].MET);
+			Rows.RemoveAt(i);
+			RemovedCount++;
 		}
+	}
+	if (RemovedCount > 0)
+	{
+		UE_LOG(LogRocketAR, Warning, TEXT("CSV: removed %d non-monotonic rows"), RemovedCount);
 	}
 
 	UE_LOG(LogRocketAR, Log, TEXT("CSV validated: %d rows, MET range [%.1f, %.1f]"),

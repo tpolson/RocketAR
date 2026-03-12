@@ -20,9 +20,6 @@ class ROCKETAR_API URocketARCameraManager : public UActorComponent
 public:
 	URocketARCameraManager();
 
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
-		FActorComponentTickFunction* ThisTickFunction) override;
-
 	/** Set the Cesium georeference for ECEF→UE conversion */
 	void SetGeoreference(ACesiumGeoreference* InGeoreference);
 

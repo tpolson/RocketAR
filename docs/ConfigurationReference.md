@@ -24,11 +24,13 @@ Values are live-synced every frame during PIE — changes in the Details panel t
 
 | Property | Default | Description |
 |---|---|---|
-| BannerDiskRadius | 5000.0 | Event banner disk radius (cm = 50m) |
-| BannerDiskThickness | 100.0 | Event banner thickness (cm = 1m) |
+| BannerWidth | 10000.0 | Event banner width (cm = 100m) |
+| BannerHeight | 10000.0 | Event banner height (cm = 100m) |
+| BannerRotationYaw | 0.0 | Z-axis rotation (yaw) for event banners (degrees) |
+| BannerImage | None | Background texture (PNG with alpha). nullptr = solid color. Import with UserInterface2D (RGBA) compression. |
+| BannerTextSize | 200.0 | Text size for event banners (cm, UTextRenderComponent WorldSize) |
+| BannerTextOffset | (0, 0, 0) | Local offset of text from banner center (cm) |
 | MaxActiveBanners | 20 | Maximum simultaneous banners |
-| BannerMaterial | null | Material with BannerTexture and Opacity params |
-| BannerFont | null | Font for banner text rendering |
 
 ## Banner Slide & Timing
 
@@ -48,9 +50,13 @@ Values are live-synced every frame during PIE — changes in the Details panel t
 |---|---|---|
 | bShowAltitudeMarkers | false | Enable altitude milestone banners |
 | AltitudeMarkerInterval | 10000.0 | Spacing between markers (meters = 10km) |
-| MarkerDiskRadius | 2000.0 | Marker disk radius (cm = 20m) |
-| MarkerDiskThickness | 50.0 | Marker thickness (cm = 0.5m) |
+| MarkerWidth | 4000.0 | Altitude marker width (cm = 40m) |
+| MarkerHeight | 4000.0 | Altitude marker height (cm = 40m) |
 | MarkerColor | (0.2, 0.8, 1.0, 1.0) | Marker color (cyan) |
+| MarkerRotationYaw | 0.0 | Z-axis rotation (yaw) for altitude markers (degrees) |
+| MarkerImage | None | Background texture for markers (PNG with alpha). nullptr = solid color. |
+| MarkerTextSize | 150.0 | Text size for altitude markers (cm) |
+| MarkerTextOffset | (0, 0, 0) | Local offset of text from marker center (cm) |
 | AltitudeMarkerAnticipation | 2.0 | Predictive look-ahead for early marker firing (seconds) |
 
 ## Flight Event Detection
@@ -67,11 +73,25 @@ Configured via `FFlightEventConfig` (EventConfig property on setup actor):
 | SRBEngineCount | 2 | Number of SRB engines in thrust array |
 | CoreEngineCount | 4 | Number of core engines in thrust array |
 | AltitudeMarkerInterval | 10000.0 | Spacing between altitude markers (meters) |
-| AltitudeMarkerMinSpacing | 5000.0 | Minimum spacing between markers (meters) |
+| AltitudeMarkerMinSpacing | 0.0 | Minimum spacing between markers (meters) |
 | AltitudeMarkerAnticipation | 2.0 | Predictive look-ahead (seconds) |
 | ReentryQThreshold | 1000.0 | Dynamic pressure threshold for reentry (Pa) |
 | ChuteDeployAltitude | 8000.0 | Chute deployment altitude (meters) |
 | SplashdownAltitude | 10.0 | Splashdown threshold (meters) |
+
+### Per-Event Overrides
+
+The `EventOverrides` array in `FFlightEventConfig` allows per-event customization of built-in events. Add entries only for events you want to modify.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `EventType` | `EFlightEvent` | Ignition | Which built-in event to override |
+| `bEnabled` | `bool` | true | Enable/disable this event |
+| `LabelOverride` | `FString` | (empty) | Custom label (empty = C++ default). Supports tokens: `{alt_km}`, `{vel}`, `{mach}`, `{q_pa}`, `{met}`, `{gforce}`, `{extra}` |
+| `bOverrideTextOffset` | `bool` | false | Whether to override banner text offset |
+| `TextOffsetOverride` | `FVector` | (0, 0, 0) | Per-event text offset (cm) |
+
+Custom events (`CustomEvents` array) also support `bOverrideTextOffset` and `TextOffsetOverride` fields. See the [Technical Reference](TechnicalReference.md) for `FCustomEventDefinition` details.
 
 ## Telemetry
 
@@ -89,6 +109,23 @@ Configured via `FFlightEventConfig` (EventConfig property on setup actor):
 | bShowHUDEvents | true | Show event announcements |
 | bShowDebugMessages | true | Show on-screen BANNER:/ALTITUDE: spawn messages |
 | bDevVisualization | true | Show Earth sphere + rocket cylinder |
+
+## Dev Visualization
+
+| Property | Default | Description |
+|---|---|---|
+| RocketHeight | 98.0 | Rocket body height in meters (SLS Block 1 = 98m) |
+| RocketRadius | 4.2 | Rocket body radius in meters (SLS Block 1 = 4.2m) |
+| bDevOpaqueBanners | false | Use opaque banner material for wireframe dev visibility (no alpha/fade) |
+
+## Dev Camera
+
+| Property | Default | Description |
+|---|---|---|
+| bUseDevCamera | false | Enable the dev inspection camera (parented to rocket) |
+| DevCameraOffset | (0, 0, 15000) | Dev camera offset from rocket root (cm). Z = along rocket axis toward nose. |
+| DevCameraRotation | (-90, 0, 0) | Dev camera rotation relative to rocket (default: looking down). |
+| DevCameraFOV | 90.0 | Dev camera field of view (degrees, 1-180) |
 
 ## Freeze-Frame Mode
 

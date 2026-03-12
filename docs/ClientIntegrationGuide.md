@@ -60,6 +60,8 @@ This order matches the default `FFlightEventConfig` which expects:
 
 If your vehicle has a different configuration, adjust `FFlightEventConfig` on the setup actor.
 
+The `EventOverrides` array in `FFlightEventConfig` supports per-event customization (enable/disable, label override, text offset override). See the [Configuration Reference](ConfigurationReference.md) for details.
+
 ## Camera Configuration
 
 Enter your physical camera specs on the `ARocketARSetupActor`:

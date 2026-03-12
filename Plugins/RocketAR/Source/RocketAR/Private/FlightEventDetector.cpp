@@ -27,7 +27,7 @@ void UFlightEventDetector::Reset()
 	MaxQRisingStartMET = -1.0;
 	bMaxQRising = false;
 	MaxQLastHigherTime = 0.0;
-	bMaxQConfirmed = false;
+	bThrustArrayWarned = false;
 	LastAltitudeMarker = 0.0;
 	HighestAltitudeMarker = 0.0;
 	bFirstFrame = true;
@@ -38,6 +38,15 @@ void UFlightEventDetector::Reset()
 void UFlightEventDetector::ProcessTelemetry(const FProcessedTelemetryData& Data)
 {
 	SCOPE_CYCLE_COUNTER(STAT_EventDetection);
+
+	// One-time thrust array size validation
+	const int32 ExpectedEngines = Config.SRBEngineCount + Config.CoreEngineCount + 1;
+	if (Data.RawData.EngineThrustPercent.Num() < ExpectedEngines && !bThrustArrayWarned)
+	{
+		UE_LOG(LogRocketAR, Warning, TEXT("Thrust array has %d engines, expected %d (SRB:%d + Core:%d + 1)"),
+			Data.RawData.EngineThrustPercent.Num(), ExpectedEngines, Config.SRBEngineCount, Config.CoreEngineCount);
+		bThrustArrayWarned = true;
+	}
 
 	if (bFirstFrame)
 	{
@@ -174,6 +183,8 @@ void UFlightEventDetector::FireEvent(EFlightEvent EventType, const FProcessedTel
 	EventData.EventLabel = Label;
 	EventData.ECEFPosition = Data.VehicleECEFPosition;
 
+	ApplyTextOffsetOverride(EventType, EventData);
+
 	DetectedEvents.Add(EventData);
 	LatchEvent(EventType);
 
@@ -194,6 +205,12 @@ void UFlightEventDetector::FireCustomEvent(const FCustomEventDefinition& Def, co
 	EventData.ECEFPosition = Data.VehicleECEFPosition;
 	EventData.CustomEventId = Def.EventId;
 
+	if (Def.bOverrideTextOffset)
+	{
+		EventData.bHasTextOffsetOverride = true;
+		EventData.TextOffsetOverride = Def.TextOffsetOverride;
+	}
+
 	DetectedEvents.Add(EventData);
 	CustomLatchedEvents.Add(Def.EventId);
 
@@ -211,6 +228,19 @@ bool UFlightEventDetector::IsEventLatched(EFlightEvent EventType) const
 void UFlightEventDetector::LatchEvent(EFlightEvent EventType)
 {
 	LatchedEvents.Add(EventType);
+}
+
+void UFlightEventDetector::ApplyTextOffsetOverride(EFlightEvent EventType, FFlightEventData& OutData) const
+{
+	for (const auto& Override : Config.EventOverrides)
+	{
+		if (Override.EventType == EventType && Override.bOverrideTextOffset)
+		{
+			OutData.bHasTextOffsetOverride = true;
+			OutData.TextOffsetOverride = Override.TextOffsetOverride;
+			return;
+		}
+	}
 }
 
 // Engine group helpers
@@ -553,6 +583,8 @@ void UFlightEventDetector::CheckAltitudeMarkers(const FProcessedTelemetryData& D
 		{
 			EventData.EventLabel = FString::Printf(TEXT("%.0f m"), MarkerAlt);
 		}
+
+		ApplyTextOffsetOverride(EFlightEvent::AltitudeMarker, EventData);
 
 		DetectedEvents.Add(EventData);
 

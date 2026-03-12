@@ -67,6 +67,14 @@ struct ROCKETAR_API FBuiltinEventOverride
 	/** Custom label (empty = use C++ default). Supports tokens: {alt_km}, {vel}, {mach}, {q_pa}, {met}, {gforce}, {extra} */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Events")
 	FString LabelOverride;
+
+	/** Override banner text offset for this event (optional) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Events")
+	bool bOverrideTextOffset = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Events",
+		meta = (EditCondition = "bOverrideTextOffset"))
+	FVector TextOffsetOverride = FVector::ZeroVector;
 };
 
 /**
@@ -104,6 +112,14 @@ struct ROCKETAR_API FCustomEventDefinition
 	/** Built-in event that must have fired before this custom event can fire (MAX = no prerequisite) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Events")
 	EFlightEvent Prerequisite = EFlightEvent::MAX;
+
+	/** Override banner text offset for this custom event (optional) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Events")
+	bool bOverrideTextOffset = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Events",
+		meta = (EditCondition = "bOverrideTextOffset"))
+	FVector TextOffsetOverride = FVector::ZeroVector;
 };
 
 /**
@@ -183,7 +199,7 @@ struct ROCKETAR_API FFlightEventConfig
 
 	/** Minimum spacing between altitude markers (meters) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Markers")
-	float AltitudeMarkerMinSpacing = 5000.0f;
+	float AltitudeMarkerMinSpacing = 0.0f;
 
 	/** Seconds of look-ahead for predictive altitude marker firing */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Markers")
@@ -237,4 +253,8 @@ struct ROCKETAR_API FFlightEventData
 	/** ECEF position at event (for banner placement) */
 	UPROPERTY(BlueprintReadOnly, Category = "Events")
 	FVector ECEFPosition = FVector::ZeroVector;
+
+	/** Per-event text offset override (set by detector if override exists) */
+	bool bHasTextOffsetOverride = false;
+	FVector TextOffsetOverride = FVector::ZeroVector;
 };

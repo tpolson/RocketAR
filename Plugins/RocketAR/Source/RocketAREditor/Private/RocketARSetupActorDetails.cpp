@@ -5,7 +5,7 @@
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Text/STextBlock.h"
 
-static bool bShowOnlyRocketAR = false;
+static bool bShowOnlyRocketAR = true;
 
 TSharedRef<IDetailCustomization> FRocketARSetupActorDetails::MakeInstance()
 {
@@ -44,7 +44,6 @@ void FRocketARSetupActorDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBu
 	IDetailCategoryBuilder& FilterCat = DetailBuilder.EditCategory(
 		TEXT("RocketAR Filter"), FText::GetEmpty(), ECategoryPriority::Important);
 
-	// Capture a pointer to the builder for the lambda
 	IDetailLayoutBuilder* BuilderPtr = &DetailBuilder;
 
 	FilterCat.AddCustomRow(FText::FromString(TEXT("Filter")))
@@ -52,6 +51,7 @@ void FRocketARSetupActorDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBu
 		[
 			SNew(SButton)
 			.HAlign(HAlign_Center)
+			.ContentPadding(FMargin(8.f, 2.f))
 			.OnClicked_Lambda([BuilderPtr]()
 			{
 				bShowOnlyRocketAR = !bShowOnlyRocketAR;

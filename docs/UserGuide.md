@@ -142,11 +142,13 @@ The camera is attached to the rocket mount point so it moves rigidly with the ve
 
 | Property | Default | Description |
 |---|---|---|
-| `BannerDiskRadius` | 5000.0 | Event banner disk radius (cm = 50m) |
-| `BannerDiskThickness` | 100.0 | Event banner thickness (cm = 1m) |
+| `BannerWidth` | 10000.0 | Event banner width (cm = 100m) |
+| `BannerHeight` | 10000.0 | Event banner height (cm = 100m) |
+| `BannerRotationYaw` | 0.0 | Z-axis rotation (yaw) for event banners (degrees) |
+| `BannerImage` | None | Background texture (PNG with alpha). Import with "UserInterface2D (RGBA)" compression and enable alpha. nullptr = solid color. |
+| `BannerTextSize` | 200.0 | Text size for event banners (cm) |
+| `BannerTextOffset` | (0, 0, 0) | Local offset of text from banner center (cm) |
 | `MaxActiveBanners` | 20 | Maximum simultaneous banners before culling oldest |
-| `BannerMaterial` | null | Material asset (must have BannerTexture and Opacity params) |
-| `BannerFont` | null | Font asset for banner text rendering |
 
 ### Banner Slide & Timing
 
@@ -170,9 +172,13 @@ The camera is attached to the rocket mount point so it moves rigidly with the ve
 |---|---|---|
 | `bShowAltitudeMarkers` | false | Enable altitude milestone banners |
 | `AltitudeMarkerInterval` | 10000.0 | Spacing between markers (meters = 10km) |
-| `MarkerDiskRadius` | 2000.0 | Marker disk radius (cm = 20m, smaller than banners) |
-| `MarkerDiskThickness` | 50.0 | Marker thickness (cm = 0.5m) |
+| `MarkerWidth` | 4000.0 | Altitude marker width (cm = 40m) |
+| `MarkerHeight` | 4000.0 | Altitude marker height (cm = 40m) |
 | `MarkerColor` | (0.2, 0.8, 1.0, 1.0) | Marker color (cyan) |
+| `MarkerRotationYaw` | 0.0 | Z-axis rotation (yaw) for altitude markers (degrees) |
+| `MarkerImage` | None | Background texture for markers (PNG with alpha). Import with "UserInterface2D (RGBA)" compression. |
+| `MarkerTextSize` | 150.0 | Text size for altitude markers (cm) |
+| `MarkerTextOffset` | (0, 0, 0) | Local offset of text from marker center (cm) |
 | `AltitudeMarkerAnticipation` | 2.0 | Predictive look-ahead (seconds). Uses `altitude + verticalVelocity * anticipation` to fire markers early. |
 
 ### Flight Event Config
@@ -186,10 +192,16 @@ The camera is attached to the rocket mount point so it moves rigidly with the ve
 | `ThrustOnThreshold` | 0.01 | Engine on/off threshold (0-1) |
 | `SRBEngineCount` | 2 | Number of SRB engines in thrust array |
 | `CoreEngineCount` | 4 | Number of core engines in thrust array |
-| `AltitudeMarkerMinSpacing` | 5000.0 | Minimum altitude between markers (meters) |
+| `AltitudeMarkerMinSpacing` | 0.0 | Minimum altitude between markers (meters) |
 | `ReentryQThreshold` | 1000.0 | Dynamic pressure threshold for reentry (Pa) |
 | `ChuteDeployAltitude` | 8000.0 | Chute deployment altitude (meters) |
 | `SplashdownAltitude` | 10.0 | Splashdown threshold (meters) |
+
+### Per-Event Text Offset Overrides
+
+The `EventOverrides` array in `EventConfig` lets you adjust text positioning per built-in event. This is useful when certain events need their text offset adjusted independently of the global `BannerTextOffset`.
+
+To use: expand **EventConfig → Event Overrides** in the Details panel, add an entry, select the `EventType`, enable `bOverrideTextOffset`, and set `TextOffsetOverride`. Custom events (defined in `EventConfig → Custom Events`) also support per-event text offset overrides via the same `bOverrideTextOffset` / `TextOffsetOverride` fields.
 
 ### Telemetry
 
@@ -207,6 +219,25 @@ The camera is attached to the rocket mount point so it moves rigidly with the ve
 | `bShowHUDEvents` | true | Show event announcements |
 | `bShowDebugMessages` | true | Show on-screen BANNER:/ALTITUDE: messages |
 | `bDevVisualization` | true | Show Earth sphere + rocket cylinder |
+
+### Dev Visualization
+
+| Property | Default | Description |
+|---|---|---|
+| `RocketHeight` | 98.0 | Rocket body height in meters (SLS Block 1 = 98m) |
+| `RocketRadius` | 4.2 | Rocket body radius in meters (SLS Block 1 = 4.2m) |
+| `bDevOpaqueBanners` | false | Opaque wireframe banners for debugging (no alpha/fade) |
+
+### Dev Camera
+
+| Property | Default | Description |
+|---|---|---|
+| `bUseDevCamera` | false | Enable dev inspection camera (parented to rocket) |
+| `DevCameraOffset` | (0, 0, 15000) | Offset from rocket root (cm). Z = along rocket axis toward nose. |
+| `DevCameraRotation` | (-90, 0, 0) | Rotation relative to rocket (default: looking down). |
+| `DevCameraFOV` | 90.0 | Field of view (degrees, 1-180) |
+
+The dev camera is useful for inspecting banner placement and rocket geometry from a fixed perspective relative to the rocket. Enable via setup actor or use `bUseDevCamera = true`.
 
 ### Freeze-Frame Mode
 
@@ -299,9 +330,12 @@ Banners spawn slightly before the trigger point:
 
 | Property | Event Banner | Altitude Marker |
 |---|---|---|
-| Disk radius | 5000 cm (50m) | 2000 cm (20m) |
-| Disk thickness | 100 cm (1m) | 50 cm (0.5m) |
+| Width | 10000 cm (100m) | 4000 cm (40m) |
+| Height | 10000 cm (100m) | 4000 cm (40m) |
 | Color | Material default | Cyan (configurable) |
+| Rotation yaw | BannerRotationYaw | MarkerRotationYaw |
+| Background image | BannerImage | MarkerImage |
+| Text size | 200 cm | 150 cm |
 | Spawn Z offset | 8000 cm | 6000 cm |
 | Debug label | "BANNER:" | "ALTITUDE:" |
 
@@ -432,7 +466,7 @@ ALTITUDE: 10 km at (x, y, z)
 When `bDevVisualization = true`, the system renders:
 
 - **Earth sphere** — Blue Marble at real scale, positioned via Cesium
-- **Rocket cylinder** — 8m diameter x 100m tall, at vehicle position, oriented to velocity
+- **Rocket cylinder** — configurable via `RocketHeight` / `RocketRadius` (SLS Block 1 defaults: 98m × 4.2m), at vehicle position, oriented to velocity
 - **Directional light** — Sun-like illumination
 - **Sky light** — Ambient fill
 
@@ -571,7 +605,7 @@ After deploying, open the project in UE and it will recompile automatically.
 
 1. Check Output Log for `FLIGHT EVENT:` messages — confirms events are firing
 2. Check for `BannerManager: Spawned` messages — confirms banners are created
-3. Verify `BannerMaterial` and `BannerFont` are assigned on setup actor
+3. Verify banner dimensions (`BannerWidth`, `BannerHeight`) are non-zero
 4. If using altitude markers, verify `bShowAltitudeMarkers = true`
 5. Check `MaxActiveBanners` hasn't been set to 0
 
@@ -589,6 +623,13 @@ After deploying, open the project in UE and it will recompile automatically.
 3. Ensure no sky, fog, or ground objects in the level
 4. Check that auto-exposure is disabled
 5. Verify all post-process effects are disabled (bloom, DOF, motion blur, vignette)
+
+### Banner Text Invisible in Alpha Output
+
+Banner text uses a `FontSampleParameter`-based translucent material with SDF thresholding. If text is invisible in the fill/key output:
+1. Ensure the font used is an **offline cached** SDF font (not a runtime-generated font)
+2. The default engine font `/Engine/EngineFonts/RobotoDistanceField` works for compilation
+3. Check that the text material has `MaterialDomain = Surface` and `BlendMode = Translucent`
 
 ### No Telemetry / CSV Not Loading
 

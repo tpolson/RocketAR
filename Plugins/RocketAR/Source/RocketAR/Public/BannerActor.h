@@ -9,6 +9,7 @@ class USceneComponent;
 class UStaticMeshComponent;
 class UTextRenderComponent;
 class UMaterialInstanceDynamic;
+class UTexture2D;
 
 UENUM(BlueprintType)
 enum class EBannerState : uint8
@@ -34,19 +35,26 @@ public:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
 
+	/** Pre-compile banner materials so first spawn doesn't show a checkerboard flash */
+	static void WarmUpMaterials();
+
 	/** Initialize the banner with event data and dimensions */
 	void InitBanner(
 		const FFlightEventData& InEventData,
 		float InWidth,
 		float InHeight,
 		bool bUseOpaqueMaterial = false,
-		FColor InWireframeColor = FColor(255, 255, 0));
+		FColor InWireframeColor = FColor(255, 255, 0),
+		float InRotationYaw = 0.0f);
 
 	/** Initialize slide motion (call after InitBanner) */
 	void InitSlide(float InSlideSpeed);
 
 	/** Override the banner color tint (call after InitBanner) */
 	void SetBannerColor(const FLinearColor& Color);
+
+	/** Apply a background texture (PNG with alpha). Call after InitBanner. nullptr = solid color. */
+	void SetBannerTexture(UTexture2D* InTexture);
 
 	/** Start the fade-out sequence */
 	UFUNCTION(BlueprintCallable, Category = "Banner")
@@ -98,6 +106,12 @@ protected:
 
 	UPROPERTY()
 	UMaterialInstanceDynamic* DynamicMaterial = nullptr;
+
+	UPROPERTY()
+	UMaterialInstanceDynamic* TextDynamicMaterial = nullptr;
+
+	UPROPERTY()
+	UTexture2D* BannerTexture = nullptr;
 
 	FFlightEventData EventData;
 	EBannerState State = EBannerState::SpawnAnimation;

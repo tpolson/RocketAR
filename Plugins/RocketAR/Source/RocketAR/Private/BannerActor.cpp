@@ -9,10 +9,17 @@
 #include "Materials/MaterialExpressionScalarParameter.h"
 #include "Materials/MaterialExpressionVectorParameter.h"
 #include "Materials/MaterialExpressionMultiply.h"
+#include "Materials/MaterialExpressionSubtract.h"
+#include "Materials/MaterialExpressionTextureSampleParameter2D.h"
+#include "Materials/MaterialExpressionFontSampleParameter.h"
+#include "Engine/Texture2D.h"
+#include "Engine/Font.h"
 #include "UObject/ConstructorHelpers.h"
 
-/** Create a shared translucent material with Color and Opacity parameters (no texture) */
-static UMaterial* GetBannerBaseMaterial()
+/** Create a shared translucent material with Color, Opacity, and BannerTexture parameters.
+ *  When no texture is bound, BannerTexture defaults to white (1,1,1,1), preserving solid-color behavior.
+ *  BaseColor = TexRGB * Color, Opacity = TexAlpha * Opacity scalar. */
+static UMaterial* GetBannerTranslucentMaterial()
 {
 	static TWeakObjectPtr<UMaterial> CachedMat;
 	if (CachedMat.IsValid()) return CachedMat.Get();
@@ -33,18 +40,163 @@ static UMaterial* GetBannerBaseMaterial()
 	OpacityParam->DefaultValue = 1.0f;
 	Mat->GetExpressionCollection().AddExpression(OpacityParam);
 
+	// Texture parameter (defaults to white when unbound)
+	auto* TexParam = NewObject<UMaterialExpressionTextureSampleParameter2D>(Mat);
+	TexParam->ParameterName = TEXT("BannerTexture");
+	Mat->GetExpressionCollection().AddExpression(TexParam);
+
+	// Multiply: TexRGB * Color → BaseColor
+	auto* MulColor = NewObject<UMaterialExpressionMultiply>(Mat);
+	Mat->GetExpressionCollection().AddExpression(MulColor);
+
+	// Multiply: TexAlpha * Opacity → Opacity
+	auto* MulOpacity = NewObject<UMaterialExpressionMultiply>(Mat);
+	Mat->GetExpressionCollection().AddExpression(MulOpacity);
+
 #if WITH_EDITOR
+	// Wire: MulColor.A = TexParam (RGB), MulColor.B = ColorParam
+	MulColor->A.Connect(0, TexParam);   // output 0 = RGB
+	MulColor->B.Connect(0, ColorParam);
+
+	// Wire: MulOpacity.A = TexParam (Alpha = output 4), MulOpacity.B = OpacityParam
+	MulOpacity->A.Connect(4, TexParam); // output 4 = Alpha
+	MulOpacity->B.Connect(0, OpacityParam);
+
 	auto* Ed = Mat->GetEditorOnlyData();
-	// BaseColor = Color
-	Ed->BaseColor.Connect(0, ColorParam);
-	// Opacity = OpacityParam
-	Ed->Opacity.Connect(0, OpacityParam);
+	Ed->BaseColor.Connect(0, MulColor);
+	Ed->Opacity.Connect(0, MulOpacity);
 #endif
 
 	Mat->PreEditChange(nullptr);
 	Mat->PostEditChange();
 	CachedMat = Mat;
 	return Mat;
+}
+
+/** Create a shared masked material with Color and BannerTexture parameters for dev visualization.
+ *  BaseColor = TexRGB * Color. OpacityMask = TexAlpha (clips pixels below threshold). */
+static UMaterial* GetBannerOpaqueMaterial()
+{
+	static TWeakObjectPtr<UMaterial> CachedMat;
+	if (CachedMat.IsValid()) return CachedMat.Get();
+
+	UMaterial* Mat = NewObject<UMaterial>(GetTransientPackage(), TEXT("BannerOpaqueMat"), RF_Transient);
+	Mat->BlendMode = BLEND_Masked;
+	Mat->TwoSided = true;
+
+	// Color tint (yellow default for dev)
+	auto* ColorParam = NewObject<UMaterialExpressionVectorParameter>(Mat);
+	ColorParam->ParameterName = TEXT("Color");
+	ColorParam->DefaultValue = FLinearColor(1.0f, 1.0f, 0.0f, 1.0f);
+	Mat->GetExpressionCollection().AddExpression(ColorParam);
+
+	// Texture parameter (defaults to white when unbound)
+	auto* TexParam = NewObject<UMaterialExpressionTextureSampleParameter2D>(Mat);
+	TexParam->ParameterName = TEXT("BannerTexture");
+	Mat->GetExpressionCollection().AddExpression(TexParam);
+
+	// Multiply: TexRGB * Color → BaseColor
+	auto* MulColor = NewObject<UMaterialExpressionMultiply>(Mat);
+	Mat->GetExpressionCollection().AddExpression(MulColor);
+
+#if WITH_EDITOR
+	MulColor->A.Connect(0, TexParam);
+	MulColor->B.Connect(0, ColorParam);
+
+	auto* Ed = Mat->GetEditorOnlyData();
+	Ed->BaseColor.Connect(0, MulColor);
+	Ed->OpacityMask.Connect(4, TexParam); // output 4 = Alpha
+#endif
+
+	Mat->PreEditChange(nullptr);
+	Mat->PostEditChange();
+	CachedMat = Mat;
+	return Mat;
+}
+
+/** Create a shared translucent material for UTextRenderComponent.
+ *  Uses UMaterialExpressionFontSampleParameter so UTextRenderComponent's MID cache
+ *  discovers the font parameter via GetAllFontParameterInfo() and binds the font texture.
+ *  Color param tints the text, Opacity param controls fade.
+ *  BaseColor = FontSample.RGB * Color, Opacity = FontSample.A * Opacity. */
+static UMaterial* GetTextTranslucentMaterial()
+{
+	static TWeakObjectPtr<UMaterial> CachedMat;
+	if (CachedMat.IsValid()) return CachedMat.Get();
+
+	UMaterial* Mat = NewObject<UMaterial>(GetTransientPackage(), TEXT("TextTranslucentMat"), RF_Transient);
+	Mat->BlendMode = BLEND_Translucent;
+	Mat->TwoSided = true;
+
+	// Color tint
+	auto* ColorParam = NewObject<UMaterialExpressionVectorParameter>(Mat);
+	ColorParam->ParameterName = TEXT("Color");
+	ColorParam->DefaultValue = FLinearColor::White;
+	Mat->GetExpressionCollection().AddExpression(ColorParam);
+
+	// Fade opacity scalar
+	auto* OpacityParam = NewObject<UMaterialExpressionScalarParameter>(Mat);
+	OpacityParam->ParameterName = TEXT("Opacity");
+	OpacityParam->DefaultValue = 1.0f;
+	Mat->GetExpressionCollection().AddExpression(OpacityParam);
+
+	// Font sample parameter — UTextRenderComponent binds the font texture to this via SetFontParameterValue
+	auto* FontParam = NewObject<UMaterialExpressionFontSampleParameter>(Mat);
+	FontParam->ParameterName = TEXT("FontTexture");
+	FontParam->ExpressionGUID = FGuid::NewGuid();
+	// Default font for material compilation (overridden at runtime by MID cache)
+	FontParam->Font = LoadObject<UFont>(nullptr, TEXT("/Engine/EngineFonts/RobotoDistanceField"));
+	FontParam->FontTexturePage = 0;
+	Mat->GetExpressionCollection().AddExpression(FontParam);
+
+	// Multiply: FontRGB * Color → BaseColor
+	auto* MulColor = NewObject<UMaterialExpressionMultiply>(Mat);
+	Mat->GetExpressionCollection().AddExpression(MulColor);
+
+	// Threshold the distance field for a clean binary matte:
+	// FontAlpha is SDF: 0.5 = edge, >0.5 = inside glyph, <0.5 = outside
+	// (FontAlpha - 0.5) * 100 → large positive inside, large negative outside
+	// Renderer clamps opacity to 0-1 → clean binary mask
+
+	// Subtract: FontAlpha - 0.5
+	auto* SubThreshold = NewObject<UMaterialExpressionSubtract>(Mat);
+	SubThreshold->ConstB = 0.5f;
+	Mat->GetExpressionCollection().AddExpression(SubThreshold);
+
+	// Multiply by sharpness factor to create hard edge
+	auto* MulSharpen = NewObject<UMaterialExpressionMultiply>(Mat);
+	MulSharpen->ConstB = 100.0f;
+	Mat->GetExpressionCollection().AddExpression(MulSharpen);
+
+	// Multiply sharpened mask by Opacity parameter for fade animation
+	auto* MulOpacity = NewObject<UMaterialExpressionMultiply>(Mat);
+	Mat->GetExpressionCollection().AddExpression(MulOpacity);
+
+#if WITH_EDITOR
+	MulColor->A.Connect(0, FontParam);   // output 0 = RGB
+	MulColor->B.Connect(0, ColorParam);
+
+	SubThreshold->A.Connect(4, FontParam); // output 4 = Alpha (SDF value)
+	MulSharpen->A.Connect(0, SubThreshold);
+	MulOpacity->A.Connect(0, MulSharpen);
+	MulOpacity->B.Connect(0, OpacityParam);
+
+	auto* Ed = Mat->GetEditorOnlyData();
+	Ed->BaseColor.Connect(0, MulColor);
+	Ed->Opacity.Connect(0, MulOpacity);
+#endif
+
+	Mat->PreEditChange(nullptr);
+	Mat->PostEditChange();
+	CachedMat = Mat;
+	return Mat;
+}
+
+void ABannerActor::WarmUpMaterials()
+{
+	GetBannerTranslucentMaterial();
+	GetBannerOpaqueMaterial();
+	GetTextTranslucentMaterial();
 }
 
 ABannerActor::ABannerActor()
@@ -92,6 +244,19 @@ void ABannerActor::SetBannerColor(const FLinearColor& Color)
 	{
 		DynamicMaterial->SetVectorParameterValue(TEXT("Color"), Color);
 	}
+	if (TextDynamicMaterial)
+	{
+		TextDynamicMaterial->SetVectorParameterValue(TEXT("Color"), Color);
+	}
+}
+
+void ABannerActor::SetBannerTexture(UTexture2D* InTexture)
+{
+	BannerTexture = InTexture;
+	if (DynamicMaterial && BannerTexture)
+	{
+		DynamicMaterial->SetTextureParameterValue(TEXT("BannerTexture"), BannerTexture);
+	}
 }
 
 void ABannerActor::InitBanner(
@@ -99,7 +264,8 @@ void ABannerActor::InitBanner(
 	float InWidth,
 	float InHeight,
 	bool bUseOpaqueMaterial,
-	FColor InWireframeColor)
+	FColor InWireframeColor,
+	float InRotationYaw)
 {
 	EventData = InEventData;
 
@@ -107,12 +273,12 @@ void ABannerActor::InitBanner(
 	const float ScaleX = InWidth / 100.0f;
 	const float ScaleY = InHeight / 100.0f;
 	BannerMesh->SetRelativeScale3D(FVector(ScaleX, ScaleY, 1.0f));
+	BannerMesh->SetRelativeRotation(FRotator(0.0f, InRotationYaw, 0.0f));
 
 	if (bUseOpaqueMaterial)
 	{
-		// Dev opaque mode: use engine BasicShapeMaterial (yellow, no alpha/fade)
-		UMaterial* OpaqueMat = LoadObject<UMaterial>(nullptr,
-			TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+		// Dev opaque mode: custom opaque material with texture support (yellow default)
+		UMaterial* OpaqueMat = GetBannerOpaqueMaterial();
 		if (OpaqueMat)
 		{
 			DynamicMaterial = UMaterialInstanceDynamic::Create(OpaqueMat, this);
@@ -125,8 +291,8 @@ void ABannerActor::InitBanner(
 	}
 	else
 	{
-		// Translucent colored material (no texture — text is a separate component)
-		UMaterial* BaseMat = GetBannerBaseMaterial();
+		// Translucent material with texture support (text is a separate component)
+		UMaterial* BaseMat = GetBannerTranslucentMaterial();
 		if (BaseMat)
 		{
 			DynamicMaterial = UMaterialInstanceDynamic::Create(BaseMat, this);
@@ -147,7 +313,20 @@ void ABannerActor::InitBanner(
 		TextComponent->SetTextRenderColor(TextColor);
 		TextComponent->SetRelativeLocation(TextOffset);
 		// Rotate text to lie in the XY plane facing -Z (toward camera behind rocket)
-		TextComponent->SetRelativeRotation(FRotator(90.0f, 0.0f, 0.0f));
+		TextComponent->SetRelativeRotation(FRotator(90.0f, InRotationYaw, 0.0f));
+
+		// Assign translucent material so text writes to scene alpha channel
+		UMaterial* TextBaseMat = GetTextTranslucentMaterial();
+		if (TextBaseMat)
+		{
+			TextDynamicMaterial = UMaterialInstanceDynamic::Create(TextBaseMat, this);
+			if (TextDynamicMaterial)
+			{
+				TextDynamicMaterial->SetVectorParameterValue(TEXT("Color"), FLinearColor(TextColor));
+				TextDynamicMaterial->SetScalarParameterValue(TEXT("Opacity"), bUseOpaqueMaterial ? 1.0f : 0.0f);
+				TextComponent->SetMaterial(0, TextDynamicMaterial);
+			}
+		}
 	}
 
 	BannerMesh->bOverrideWireframeColor = true;
@@ -208,11 +387,9 @@ void ABannerActor::UpdateSpawnAnimation(float DeltaTime)
 	}
 
 	// Fade text alpha in sync with the banner material
-	if (TextComponent)
+	if (TextDynamicMaterial)
 	{
-		FColor C = TextColor;
-		C.A = static_cast<uint8>(Alpha * 255.0f);
-		TextComponent->SetTextRenderColor(C);
+		TextDynamicMaterial->SetScalarParameterValue(TEXT("Opacity"), Alpha);
 	}
 
 	if (SpawnAnimTime >= Duration)
@@ -238,11 +415,9 @@ void ABannerActor::UpdateFadeOut(float DeltaTime)
 	}
 
 	// Fade text alpha in sync
-	if (TextComponent)
+	if (TextDynamicMaterial)
 	{
-		FColor C = TextColor;
-		C.A = static_cast<uint8>(FadeAlpha * 255.0f);
-		TextComponent->SetTextRenderColor(C);
+		TextDynamicMaterial->SetScalarParameterValue(TEXT("Opacity"), FadeAlpha);
 	}
 
 	if (FadeAlpha <= 0.0f)

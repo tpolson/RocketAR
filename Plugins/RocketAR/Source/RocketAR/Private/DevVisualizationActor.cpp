@@ -105,22 +105,11 @@ void ADevVisualizationActor::UpdateFromTelemetry(const FProcessedTelemetryData& 
 {
 	if (!bIsVisible) return;
 
-	// Compute rocket orientation from velocity (align Z axis to direction of travel)
-	if (bHasPrevPosition)
+	// Use telemetry quaternion for full 3-axis orientation (proper roll, no flip)
+	if (Data.RawData.bTelemetryValid)
 	{
-		const FVector Delta = Data.UEPosition - PrevUEPosition;
-		const double DeltaLen = Delta.Size();
-
-		if (DeltaLen > 1.0) // Moving — align to velocity
-		{
-			const FVector VelDir = Delta / DeltaLen;
-			// Build rotation that maps +Z to velocity direction
-			RocketOrientation = FQuat::FindBetweenNormals(FVector::UpVector, VelDir);
-		}
-		// If not moving, keep previous orientation (starts as identity = straight up)
+		RocketOrientation = Data.UERotation;
 	}
-	PrevUEPosition = Data.UEPosition;
-	bHasPrevPosition = true;
 
 	if (RocketMesh)
 	{

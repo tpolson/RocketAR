@@ -1,4 +1,5 @@
 #include "RocketARSetupActor.h"
+#include "RocketARInputComponent.h"
 #include "TelemetrySubsystem.h"
 #include "FlightEventDetector.h"
 #include "BannerManager.h"
@@ -18,6 +19,10 @@
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 
+#include "Materials/Material.h"
+#include "Materials/MaterialExpressionSceneTexture.h"
+#include "Materials/MaterialExpressionComponentMask.h"
+
 #if WITH_CESIUM
 #include "CesiumGeoreference.h"
 #endif
@@ -26,9 +31,14 @@ ARocketARSetupActor::ARocketARSetupActor()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
+	// Explicitly create a plain UInputComponent — UE 5.7 defaults to Enhanced Input,
+	// whose UEnhancedInputComponent does not process legacy BindKey calls.
+	InputComponent = CreateDefaultSubobject<UInputComponent>(TEXT("ActorInputComponent0"));
+
 	// Create components
 	BannerManager = CreateDefaultSubobject<UBannerManager>(TEXT("BannerManager"));
 	CameraManager = CreateDefaultSubobject<URocketARCameraManager>(TEXT("CameraManager"));
+	RocketARInput = CreateDefaultSubobject<URocketARInputComponent>(TEXT("RocketARInput"));
 }
 
 void ARocketARSetupActor::BeginPlay()
@@ -36,6 +46,9 @@ void ARocketARSetupActor::BeginPlay()
 	Super::BeginPlay();
 
 	UE_LOG(LogRocketAR, Log, TEXT("RocketAR Setup Actor: BeginPlay"));
+
+	// Pre-compile banner materials to avoid checkerboard flash on first spawn
+	ABannerActor::WarmUpMaterials();
 
 	// Create event detector
 	EventDetector = NewObject<UFlightEventDetector>(this);
@@ -71,6 +84,29 @@ void ARocketARSetupActor::BeginPlay()
 	if (bFreezeFrameMode)
 	{
 		SetupFreezeFrame();
+	}
+
+	// Create alpha preview post-process material (dynamic, no asset needed)
+	{
+		UMaterial* AlphaMat = NewObject<UMaterial>(this, TEXT("M_AlphaPreview"));
+		AlphaMat->MaterialDomain = EMaterialDomain::MD_PostProcess;
+		AlphaMat->BlendableLocation = EBlendableLocation::BL_AfterTonemapping;
+
+		UMaterialExpressionSceneTexture* SceneTex = NewObject<UMaterialExpressionSceneTexture>(AlphaMat);
+		SceneTex->SceneTextureId = ESceneTextureId::PPI_PostProcessInput0;
+		AlphaMat->GetExpressionCollection().AddExpression(SceneTex);
+
+		UMaterialExpressionComponentMask* AlphaMask = NewObject<UMaterialExpressionComponentMask>(AlphaMat);
+		AlphaMask->R = false;
+		AlphaMask->G = false;
+		AlphaMask->B = false;
+		AlphaMask->A = true;
+		AlphaMask->Input.Connect(0, SceneTex);
+		AlphaMat->GetExpressionCollection().AddExpression(AlphaMask);
+
+		AlphaMat->GetEditorOnlyData()->EmissiveColor.Connect(0, AlphaMask);
+		AlphaMat->PostEditChange();
+		AlphaPreviewMaterial = AlphaMat;
 	}
 
 	UE_LOG(LogRocketAR, Log, TEXT("RocketAR Setup Actor: Initialization complete"));
@@ -291,18 +327,11 @@ void ARocketARSetupActor::SetupFreezeFrame()
 	{
 		FProcessedTelemetryData FakeData;
 		FakeData.UEPosition = RocketUEPos;
+		FakeData.UERotation = FQuat::Identity; // Vertical (rocket on pad)
 		FakeData.AltitudeASL = FreezeFrameAltitude;
 		FakeData.VelocityMagnitude = 500.0;
 		FakeData.RawData.MissionElapsedTime = 60.0;
 		FakeData.RawData.bTelemetryValid = true;
-		DevVisActor->UpdateFromTelemetry(FakeData);
-
-		// Second update so velocity orientation works (needs two positions)
-		FakeData.UEPosition = RocketUEPos + FVector(0.0, 0.0, 100.0);
-		DevVisActor->UpdateFromTelemetry(FakeData);
-
-		// Set back to exact position
-		FakeData.UEPosition = RocketUEPos;
 		DevVisActor->UpdateFromTelemetry(FakeData);
 	}
 
@@ -396,6 +425,7 @@ void ARocketARSetupActor::WireSubsystems()
 		BannerManager->AnticipationSeconds = AnticipationSeconds;
 		BannerManager->BannerTextSize = BannerTextSize;
 		BannerManager->BannerTextOffset = BannerTextOffset;
+		BannerManager->BannerRotationYaw = BannerRotationYaw;
 	}
 
 	// Wire event detector — setup actor is sole handler for event→banner/HUD
@@ -410,10 +440,13 @@ void ARocketARSetupActor::WireSubsystems()
 		BannerManager->MarkerWidth = MarkerWidth;
 		BannerManager->MarkerHeight = MarkerHeight;
 		BannerManager->MarkerColor = MarkerColor;
+		BannerManager->MarkerRotationYaw = MarkerRotationYaw;
 		BannerManager->MarkerTextSize = MarkerTextSize;
 		BannerManager->MarkerTextOffset = MarkerTextOffset;
 		BannerManager->bShowDebugMessages = bShowDebugMessages;
 		BannerManager->bDevOpaqueBanners = bDevOpaqueBanners;
+		BannerManager->BannerImage = BannerImage;
+		BannerManager->MarkerImage = MarkerImage;
 	}
 
 	// Sync full event config, then overlay convenience properties
@@ -550,10 +583,13 @@ void ARocketARSetupActor::Tick(float DeltaTime)
 		BannerManager->MarkerWidth = MarkerWidth;
 		BannerManager->MarkerHeight = MarkerHeight;
 		BannerManager->MarkerColor = MarkerColor;
+		BannerManager->MarkerRotationYaw = MarkerRotationYaw;
 		BannerManager->MarkerTextSize = MarkerTextSize;
 		BannerManager->MarkerTextOffset = MarkerTextOffset;
 		BannerManager->bShowDebugMessages = bShowDebugMessages;
 		BannerManager->bDevOpaqueBanners = bDevOpaqueBanners;
+		BannerManager->BannerImage = BannerImage;
+		BannerManager->MarkerImage = MarkerImage;
 	}
 
 	// Live-sync HUD flags
@@ -616,6 +652,33 @@ void ARocketARSetupActor::Tick(float DeltaTime)
 			}
 		}
 		bDevCameraLastState = bUseDevCamera;
+	}
+
+	// Toggle alpha preview post-process on active camera
+	if (bShowAlphaPreview != bAlphaPreviewLastState)
+	{
+		ACineCameraActor* ActiveCam = (bUseDevCamera && DevCameraActor) ? DevCameraActor : CameraActor;
+		if (ActiveCam)
+		{
+			UCineCameraComponent* CineComp = ActiveCam->GetCineCameraComponent();
+			if (CineComp && AlphaPreviewMaterial)
+			{
+				if (bShowAlphaPreview)
+				{
+					CineComp->PostProcessSettings.AddBlendable(
+						TScriptInterface<IBlendableInterface>(AlphaPreviewMaterial), 1.0f);
+					CineComp->PostProcessSettings.bOverride_AutoExposureBias = true;
+					UE_LOG(LogRocketAR, Log, TEXT("Alpha preview: ON"));
+				}
+				else
+				{
+					CineComp->PostProcessSettings.RemoveBlendable(
+						TScriptInterface<IBlendableInterface>(AlphaPreviewMaterial));
+					UE_LOG(LogRocketAR, Log, TEXT("Alpha preview: OFF"));
+				}
+			}
+		}
+		bAlphaPreviewLastState = bShowAlphaPreview;
 	}
 
 	// Live-sync freeze frame — re-run when altitude or label changes

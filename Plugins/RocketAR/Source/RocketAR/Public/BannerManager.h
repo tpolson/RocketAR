@@ -7,6 +7,7 @@
 
 class ABannerActor;
 class UFlightEventDetector;
+class UTexture2D;
 
 /** Pending banner waiting for trigger time offset to elapse */
 USTRUCT()
@@ -104,6 +105,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Marker")
 	FLinearColor MarkerColor = FLinearColor(0.2f, 0.8f, 1.0f, 1.0f); // cyan
 
+	/** Z-axis rotation (yaw) for event banners in degrees */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config")
+	float BannerRotationYaw = 0.0f;
+
+	/** Z-axis rotation (yaw) for altitude markers in degrees */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Marker")
+	float MarkerRotationYaw = 0.0f;
+
 	// Slide configuration
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Slide")
 	float TriggerTimeOffset = 0.0f;
@@ -128,6 +137,14 @@ public:
 	/** Seconds before trigger time to begin spawn (anticipation) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Slide")
 	float AnticipationSeconds = 1.5f;
+
+	/** Background image for event banners (PNG with alpha). nullptr = solid color. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Image")
+	UTexture2D* BannerImage = nullptr;
+
+	/** Background image for altitude markers (PNG with alpha). nullptr = solid color. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Image")
+	UTexture2D* MarkerImage = nullptr;
 
 	/** Use opaque banner material for dev wireframe visibility (no alpha/fade) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Debug")

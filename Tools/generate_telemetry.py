@@ -95,6 +95,48 @@ def euler_to_quat(pitch_rad, yaw_rad, roll_rad):
     return (x, y, z, w)
 
 
+def quat_multiply(a, b):
+    """Multiply quaternions a * b. Both in (x, y, z, w) format."""
+    ax, ay, az, aw = a
+    bx, by, bz, bw = b
+    return (
+        aw*bx + ax*bw + ay*bz - az*by,
+        aw*by - ax*bz + ay*bw + az*bx,
+        aw*bz + ax*by - ay*bx + az*bw,
+        aw*bw - ax*bx - ay*by - az*bz,
+    )
+
+
+def mat3_to_quat(m):
+    """Convert 3x3 rotation matrix (row-major list-of-lists) to quaternion (x,y,z,w)."""
+    tr = m[0][0] + m[1][1] + m[2][2]
+    if tr > 0:
+        s = math.sqrt(tr + 1.0) * 2
+        w = 0.25 * s
+        x = (m[2][1] - m[1][2]) / s
+        y = (m[0][2] - m[2][0]) / s
+        z = (m[1][0] - m[0][1]) / s
+    elif m[0][0] > m[1][1] and m[0][0] > m[2][2]:
+        s = math.sqrt(1.0 + m[0][0] - m[1][1] - m[2][2]) * 2
+        w = (m[2][1] - m[1][2]) / s
+        x = 0.25 * s
+        y = (m[0][1] + m[1][0]) / s
+        z = (m[0][2] + m[2][0]) / s
+    elif m[1][1] > m[2][2]:
+        s = math.sqrt(1.0 + m[1][1] - m[0][0] - m[2][2]) * 2
+        w = (m[0][2] - m[2][0]) / s
+        x = (m[0][1] + m[1][0]) / s
+        y = 0.25 * s
+        z = (m[1][2] + m[2][1]) / s
+    else:
+        s = math.sqrt(1.0 + m[2][2] - m[0][0] - m[1][1]) * 2
+        w = (m[1][0] - m[0][1]) / s
+        x = (m[0][2] + m[2][0]) / s
+        y = (m[1][2] + m[2][1]) / s
+        z = 0.25 * s
+    return (x, y, z, w)
+
+
 def us_std_atm_density(alt_m):
     """Simple US Standard Atmosphere density model."""
     if alt_m < 0:
@@ -129,6 +171,14 @@ def generate_trajectory(launch_lat_rad, launch_lon_rad, launch_alt, azimuth_rad)
     cos_lat = math.cos(launch_lat_rad)
     sin_lon = math.sin(launch_lon_rad)
     cos_lon = math.cos(launch_lon_rad)
+
+    # ENU-to-ECEF rotation matrix at launch pad (columns: East, North, Up in ECEF)
+    m_enu_to_ecef = [
+        [-sin_lon,  -sin_lat * cos_lon,  cos_lat * cos_lon],
+        [ cos_lon,  -sin_lat * sin_lon,  cos_lat * sin_lon],
+        [ 0.0,       cos_lat,            sin_lat          ],
+    ]
+    q_enu_to_ecef = mat3_to_quat(m_enu_to_ecef)
 
     # Downrange direction in ENU depends on launch azimuth
     # Azimuth 0=North, 90=East, 180=South, 270=West
@@ -265,8 +315,15 @@ def generate_trajectory(launch_lat_rad, launch_lon_rad, launch_alt, azimuth_rad)
         # Acceleration in body frame (simplified — mostly axial)
         body_accel = (a_downrange, a_cross, a_up + 9.81)  # Remove gravity to get body-frame
 
-        # Quaternion: rocket pointing along pitch angle from vertical
-        quat = euler_to_quat(pitch - math.radians(90), 0.0, 0.0)
+        # Quaternion in ENU frame: pitch from vertical toward azimuth direction
+        # yaw = -(90° + azimuth) aligns the pitch plane with the launch azimuth in ENU
+        quat_enu = euler_to_quat(
+            pitch - math.radians(90),
+            -(math.radians(90) + azimuth_rad),
+            0.0
+        )
+        # Convert from ENU to ECEF frame
+        quat = quat_multiply(q_enu_to_ecef, quat_enu)
 
         # Build thrust array: [SRB1, SRB2, Core1, Core2, Core3, Core4, Stage2]
         thrusts = [

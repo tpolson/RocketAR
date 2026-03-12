@@ -43,9 +43,11 @@
 | Splashdown | Altitude near sea level after descent |
 | Altitude Markers | Predictive: every 10km during ascent (configurable) |
 
+Per-event customization (enable/disable, label override, text offset) is available via `EventConfig → Event Overrides` on the setup actor.
+
 ## Banner Behavior
 
-Banners spawn above the rocket nose (configurable Z offset) and slide down along the rocket body. They begin animating slightly before the trigger point via anticipation timing.
+Banners spawn above the rocket nose (configurable Z offset) and slide down along the rocket body. They begin animating slightly before the trigger point via anticipation timing. Text position can be customized per-event via `EventOverrides` in the setup actor's `EventConfig`.
 
 | Parameter | Default | Effect |
 |---|---|---|
@@ -81,7 +83,7 @@ Status color: Green = good, Yellow = predicted (1-3s stale), Red = signal loss (
 **Banners not appearing:**
 - Check Output Log for "FLIGHT EVENT" and "BannerManager: Spawned" messages
 - Verify CSV is loaded ("CSV loaded: N rows")
-- Check BannerMaterial and BannerFont are assigned
+- Verify banner dimensions (`BannerWidth`, `BannerHeight`) are non-zero
 - For altitude markers, verify `bShowAltitudeMarkers = true`
 
 **Banners not in camera view:**

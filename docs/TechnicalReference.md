@@ -111,6 +111,27 @@ UTelemetrySubsystem (world subsystem)
 | `ChuteDeployment` | Chute Deployment |
 | `Splashdown` | Splashdown |
 | `AltitudeMarker` | Altitude Marker |
+| `Custom` | Custom Event |
+
+### ECustomEventMetric
+**File:** `Public/FlightEventTypes.h`
+
+| Value | Display Name |
+|---|---|
+| `Altitude` | Altitude (m) |
+| `Velocity` | Velocity (m/s) |
+| `MachNumber` | Mach Number |
+| `DynamicPressure` | Dynamic Pressure (Pa) |
+| `GForce` | G-Force |
+| `MET` | Mission Elapsed Time (s) |
+
+### ECustomEventDirection
+**File:** `Public/FlightEventTypes.h`
+
+| Value | Display Name |
+|---|---|
+| `RisingEdge` | Rising Edge (crosses above) |
+| `FallingEdge` | Falling Edge (crosses below) |
 
 ### EBannerState
 **File:** `Public/BannerActor.h`
@@ -162,6 +183,36 @@ Processed telemetry with all derived values and UE-space transforms.
 | `StaleDurationSeconds` | `float` | How long data has been stale |
 | `VehicleECEFPosition` | `FVector` | ECEF for banner placement |
 
+### FBuiltinEventOverride
+**File:** `Public/FlightEventTypes.h` | BlueprintType
+
+Per-event enable/disable, label override, and text offset override for built-in events.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `EventType` | `EFlightEvent` | Ignition | Which built-in event to override |
+| `bEnabled` | `bool` | true | Whether this event is enabled |
+| `LabelOverride` | `FString` | (empty) | Custom label (empty = C++ default). Supports tokens: `{alt_km}`, `{vel}`, `{mach}`, `{q_pa}`, `{met}`, `{gforce}`, `{extra}` |
+| `bOverrideTextOffset` | `bool` | false | Override banner text offset for this event |
+| `TextOffsetOverride` | `FVector` | Zero | Per-event text offset (cm) |
+
+### FCustomEventDefinition
+**File:** `Public/FlightEventTypes.h` | BlueprintType
+
+Definition for a user-defined custom threshold event.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `EventId` | `FName` | — | Unique identifier (used as latch key) |
+| `bEnabled` | `bool` | true | Whether this custom event is enabled |
+| `Metric` | `ECustomEventMetric` | Altitude | Which telemetry metric to watch |
+| `Threshold` | `double` | 0.0 | Threshold value for the metric |
+| `Direction` | `ECustomEventDirection` | RisingEdge | Fire when metric crosses above or below threshold |
+| `Label` | `FString` | "CUSTOM EVENT" | Banner label. Supports tokens: `{alt_km}`, `{alt_m}`, `{vel}`, `{mach}`, `{q_pa}`, `{met}`, `{gforce}`, `{extra}` |
+| `Prerequisite` | `EFlightEvent` | MAX | Built-in event that must have fired first (MAX = no prerequisite) |
+| `bOverrideTextOffset` | `bool` | false | Override banner text offset for this custom event |
+| `TextOffsetOverride` | `FVector` | Zero | Per-event text offset (cm) |
+
 ### FFlightEventConfig
 **File:** `Public/FlightEventTypes.h` | BlueprintType
 
@@ -170,18 +221,24 @@ Data-driven event detection thresholds.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `LiftoffAltitudeThreshold` | `float` | 1.0 | Meters to trigger liftoff |
+| `Mach1Threshold` | `float` | 1.0 | Mach threshold for the Mach 1 event |
 | `MaxQRisingDuration` | `float` | 20.0 | Min rising duration (seconds) |
 | `MaxQDropPercent` | `float` | 0.05 | Fraction drop to confirm (5%) |
 | `MaxQConfirmationWindow` | `float` | 1.0 | Confirmation window (seconds) |
 | `ThrustOnThreshold` | `float` | 0.01 | Engine on/off threshold |
+| `StageSeparationDelay` | `float` | 3.0 | Delay after MECO before stage separation (seconds) |
+| `FairingAltitudeThreshold` | `float` | 100000.0 | Altitude above which fairing jettison can fire (meters) |
+| `FairingQThreshold` | `float` | 1.0 | Dynamic pressure below which fairing jettison can fire (Pa) |
 | `SRBEngineCount` | `int32` | 2 | SRB engines in thrust array |
 | `CoreEngineCount` | `int32` | 4 | Core engines in thrust array |
 | `AltitudeMarkerInterval` | `float` | 10000.0 | Marker spacing (meters) |
-| `AltitudeMarkerMinSpacing` | `float` | 5000.0 | Minimum spacing (meters) |
+| `AltitudeMarkerMinSpacing` | `float` | 0.0 | Minimum spacing (meters) |
 | `AltitudeMarkerAnticipation` | `float` | 2.0 | Predictive look-ahead (seconds) |
 | `ReentryQThreshold` | `float` | 1000.0 | Reentry Q threshold (Pa) |
 | `ChuteDeployAltitude` | `float` | 8000.0 | Chute deploy altitude (meters) |
 | `SplashdownAltitude` | `float` | 10.0 | Splashdown threshold (meters) |
+| `EventOverrides` | `TArray<FBuiltinEventOverride>` | (empty) | Per-event enable/disable and label overrides |
+| `CustomEvents` | `TArray<FCustomEventDefinition>` | (empty) | User-defined threshold events (e.g., Mach 2, Karman Line) |
 
 ### FFlightEventData
 **File:** `Public/FlightEventTypes.h` | BlueprintType
@@ -195,7 +252,10 @@ Data about a detected flight event, passed to banners and HUD.
 | `Altitude` | `double` | Altitude ASL at detection (meters) |
 | `Velocity` | `double` | Velocity at detection (m/s) |
 | `EventLabel` | `FString` | Display text (e.g. "MAX Q \| 32,450 Pa") |
+| `CustomEventId` | `FName` | Custom event identifier (set for Custom events, empty for built-in) |
 | `ECEFPosition` | `FVector` | ECEF position for banner placement |
+| `bHasTextOffsetOverride` | `bool` | Whether a per-event text offset override was set |
+| `TextOffsetOverride` | `FVector` | Per-event text offset override (set by detector) |
 
 ### FPendingBanner
 **File:** `Public/BannerManager.h` | USTRUCT
@@ -347,21 +407,32 @@ Manages the complete banner lifecycle: event listening, deferred queuing, spawni
 
 | Property | Type | Default | Description |
 |---|---|---|---|
-| `BannerDiskRadius` | `float` | 5000.0 | Event banner radius (cm) |
-| `BannerDiskThickness` | `float` | 100.0 | Event banner thickness (cm) |
+| `BannerWidth` | `float` | 10000.0 | Event banner width (cm) |
+| `BannerHeight` | `float` | 10000.0 | Event banner height (cm) |
+| `BannerRotationYaw` | `float` | 0.0 | Z-axis rotation (yaw) for event banners (degrees) |
+| `BannerImage` | `UTexture2D*` | nullptr | Background texture for event banners (PNG with alpha) |
 | `MaxActiveBanners` | `int32` | 20 | Max simultaneous banners |
 | `BannerFadeOutDuration` | `float` | 1.0 | Fade-out time (seconds) |
-| `BannerMaterial` | `UMaterialInterface*` | null | Material with BannerTexture + Opacity params |
-| `BannerFont` | `UFont*` | null | Font for banner text |
 | `BannerActorClass` | `TSubclassOf<ABannerActor>` | ABannerActor | Spawned actor class |
+
+**Text Properties:**
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `BannerTextSize` | `float` | 200.0 | Text size for event banners (cm) |
+| `BannerTextOffset` | `FVector` | Zero | Text offset from banner root (cm) |
+| `MarkerTextSize` | `float` | 150.0 | Text size for altitude markers (cm) |
+| `MarkerTextOffset` | `FVector` | Zero | Text offset from marker root (cm) |
 
 **Altitude Marker Properties:**
 
 | Property | Type | Default | Description |
 |---|---|---|---|
-| `MarkerDiskRadius` | `float` | 2000.0 | Marker radius (cm) |
-| `MarkerDiskThickness` | `float` | 50.0 | Marker thickness (cm) |
+| `MarkerWidth` | `float` | 4000.0 | Marker width (cm) |
+| `MarkerHeight` | `float` | 4000.0 | Marker height (cm) |
 | `MarkerColor` | `FLinearColor` | (0.2, 0.8, 1.0, 1.0) | Marker color (cyan) |
+| `MarkerRotationYaw` | `float` | 0.0 | Z-axis rotation (yaw) for altitude markers (degrees) |
+| `MarkerImage` | `UTexture2D*` | nullptr | Background texture for altitude markers (PNG with alpha) |
 
 **Slide & Timing Properties:**
 
@@ -391,9 +462,19 @@ Manages the complete banner lifecycle: event listening, deferred queuing, spawni
 ### ABannerActor
 **File:** `Public/BannerActor.h` | Parent: `AActor`
 
-Individual banner instance: flat disk mesh with rendered text, slide motion, fade animation.
+Individual banner instance: flat plane mesh with translucent text, slide motion, fade animation.
 
 **State Machine:** `SpawnAnimation` -> `Active` -> `FadeOut` -> `Destroyed`
+
+**Components:**
+
+| Component | Type | Description |
+|---|---|---|
+| `RootScene` | `USceneComponent` | Root component |
+| `BannerMesh` | `UStaticMeshComponent` | Flat plane mesh with dynamic material |
+| `TextComponent` | `UTextRenderComponent` | Text rendering with FontSampleParameter translucent material |
+| `DynamicMaterial` | `UMaterialInstanceDynamic` | Banner mesh material instance |
+| `TextDynamicMaterial` | `UMaterialInstanceDynamic` | Text material instance (SDF thresholding for clean alpha) |
 
 **Properties:**
 
@@ -403,18 +484,24 @@ Individual banner instance: flat disk mesh with rendered text, slide motion, fad
 | `FadeInDuration` | `float` | 0.3 | Opacity ramp-up at spawn |
 | `FadeOutDuration` | `float` | 1.0 | Opacity ramp-down at end |
 | `SpawnTime` | `double` | — | World time when spawned |
+| `TextOffset` | `FVector` | Zero | Local offset of text from banner root (cm) |
+| `TextWorldSize` | `float` | 200.0 | Text rendering world size (cm) |
+| `TextColor` | `FColor` | White | Text color |
 
 **Key Methods:**
 
 | Method | Description |
 |---|---|
-| `InitBanner(FFlightEventData, Radius, Thickness, Material, Font)` | Configure geometry and render text |
+| `InitBanner(FFlightEventData, Width, Height, bUseOpaqueMaterial, InWireframeColor, InRotationYaw)` | Configure geometry, set rotation yaw, render text |
 | `InitSlide(float SlideSpeed)` | Set slide velocity (local -Z) |
-| `SetDiskColor(FLinearColor)` | Override material color (for markers) |
+| `SetBannerColor(FLinearColor)` | Override material color tint (for markers) |
+| `SetBannerTexture(UTexture2D*)` | Apply background texture (PNG with alpha). nullptr = solid color. |
 | `StartFadeOut()` | Begin fade-out animation |
 | `ForceDestroy()` | Immediate destruction |
 | `GetBannerState()` | Current lifecycle state |
 | `GetEventData()` | Event data this banner represents |
+
+**Text Rendering Note:** Banner text uses a `FontSampleParameter`-based translucent material. Font textures are SDF (Signed Distance Field); the material thresholds with `(Alpha - 0.5) * 100` for a clean binary matte suitable for fill/key output.
 
 ---
 
@@ -568,8 +655,17 @@ Development-only visualization with Earth sphere and rocket cylinder.
 
 **Components:**
 - `EarthMesh` — Sphere at real scale (~6.4M km radius), positioned at ECEF origin
-- `RocketMesh` — Cylinder (8m diameter x 100m tall) at vehicle position
+- `RocketMesh` — Cylinder at vehicle position, configurable via `RocketHeight` / `RocketRadius` (SLS Block 1 defaults: 98m height × 4.2m radius)
 - `RocketMountPoint` — Unscaled `USceneComponent` at vehicle position; camera and banners attach here
+
+**Dev Camera Properties** (on `ARocketARSetupActor`):
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `bUseDevCamera` | `bool` | false | Enable dev inspection camera (parented to rocket) |
+| `DevCameraOffset` | `FVector` | (0, 0, 15000) | Offset from rocket root (cm). Z = toward nose. |
+| `DevCameraRotation` | `FRotator` | (-90, 0, 0) | Rotation relative to rocket |
+| `DevCameraFOV` | `float` | 90.0 | Field of view (degrees, 1-180) |
 
 **Key Methods:**
 

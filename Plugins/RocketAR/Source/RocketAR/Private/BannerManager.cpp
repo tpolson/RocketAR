@@ -46,6 +46,14 @@ void UBannerManager::QueueBanner(const FFlightEventData& EventData, const FVecto
 	Pending.SpawnPosition = LastVehicleUEPosition;
 	Pending.TriggerWorldTime = World->GetTimeSeconds() + TriggerTimeOffset - AnticipationSeconds;
 
+	// Cap pending queue to prevent unbounded growth
+	const int32 QueueCap = FMath::Max(MaxActiveBanners * 2, 4);
+	if (PendingBanners.Num() >= QueueCap)
+	{
+		UE_LOG(LogRocketAR, Warning, TEXT("Pending banner queue full (%d), dropping oldest"), PendingBanners.Num());
+		PendingBanners.RemoveAt(0);
+	}
+
 	PendingBanners.Add(Pending);
 
 	UE_LOG(LogRocketAR, Log, TEXT("BannerManager: Queued banner '%s' (offset=%.2fs, anticipation=%.2fs)"),
@@ -66,6 +74,9 @@ ABannerActor* UBannerManager::SpawnBannerFromQueue(const FPendingBanner& Pending
 {
 	UWorld* World = GetWorld();
 	if (!World) return nullptr;
+
+	// Guard: if MaxActiveBanners is 0, banners are disabled
+	if (MaxActiveBanners <= 0) { return nullptr; }
 
 	// Enforce max banner limit
 	while (ActiveBanners.Num() >= MaxActiveBanners)
@@ -111,23 +122,44 @@ ABannerActor* UBannerManager::SpawnBannerFromQueue(const FPendingBanner& Pending
 	const float Width = bIsMarker ? MarkerWidth : BannerWidth;
 	const float Height = bIsMarker ? MarkerHeight : BannerHeight;
 
+	// Validate dimensions to prevent degenerate geometry
+	if (Width <= 0.0f || Height <= 0.0f)
+	{
+		UE_LOG(LogRocketAR, Warning, TEXT("Banner not spawned: invalid dimensions (%.1f x %.1f)"), Width, Height);
+		Banner->Destroy();
+		ActiveBanners.Remove(Banner);
+		return nullptr;
+	}
+
 	// Configure text before InitBanner
 	Banner->TextWorldSize = bIsMarker ? MarkerTextSize : BannerTextSize;
-	Banner->TextOffset = bIsMarker ? MarkerTextOffset : BannerTextOffset;
+	if (Pending.EventData.bHasTextOffsetOverride)
+		Banner->TextOffset = Pending.EventData.TextOffsetOverride;
+	else
+		Banner->TextOffset = bIsMarker ? MarkerTextOffset : BannerTextOffset;
 
 	const FColor WireframeColor = bIsMarker ? FColor(0, 200, 255) : FColor(255, 255, 0);
+	const float RotationYaw = bIsMarker ? MarkerRotationYaw : BannerRotationYaw;
 
 	Banner->InitBanner(
 		Pending.EventData,
 		Width,
 		Height,
 		bDevOpaqueBanners,
-		WireframeColor);
+		WireframeColor,
+		RotationYaw);
 
 	// Set marker color tint
 	if (bIsMarker)
 	{
 		Banner->SetBannerColor(MarkerColor);
+	}
+
+	// Apply background texture if assigned
+	UTexture2D* ImageToUse = bIsMarker ? MarkerImage : BannerImage;
+	if (ImageToUse)
+	{
+		Banner->SetBannerTexture(ImageToUse);
 	}
 
 	Banner->InitSlide(SlideSpeed);

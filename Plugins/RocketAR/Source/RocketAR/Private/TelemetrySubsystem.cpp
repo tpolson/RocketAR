@@ -162,7 +162,7 @@ void UTelemetrySubsystem::PollProvider()
 	}
 
 	// Jump detection: >500m between consecutive samples at 5Hz = >100km/s (physically impossible)
-	if (Interpolator->GetSampleCount() > 0)
+	if (Interpolator && Interpolator->GetSampleCount() > 0)
 	{
 		// Check against the last sample position
 		FVector LastPos, LastVel, LastAcc;
@@ -197,6 +197,7 @@ void UTelemetrySubsystem::PollProvider()
 	Sample.Timestamp = WorldTimeAccumulator;
 	Sample.bValid = true;
 
+	if (!Interpolator) { return; }
 	Interpolator->AddSample(Sample);
 	bTelemetryActive = true;
 }

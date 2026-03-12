@@ -69,11 +69,7 @@ private:
 	UPROPERTY()
 	USceneComponent* RocketMountPoint = nullptr;
 
-	/** Previous UE position for velocity-based rocket orientation */
-	FVector PrevUEPosition = FVector::ZeroVector;
-	bool bHasPrevPosition = false;
-
-	/** Current rocket orientation (aligned to velocity) */
+	/** Current rocket orientation (from telemetry quaternion) */
 	FQuat RocketOrientation = FQuat::Identity;
 
 	bool bIsVisible = true;

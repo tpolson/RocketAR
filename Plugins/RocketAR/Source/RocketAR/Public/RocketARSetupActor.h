@@ -17,6 +17,8 @@ class ACSVTelemetryProvider;
 class ABannerActor;
 class ADevVisualizationActor;
 class ARocketARHUD;
+class URocketARInputComponent;
+class UTexture2D;
 
 /**
  * Master setup actor that wires all RocketAR systems together.
@@ -108,6 +110,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
 	float BannerHeight = 10000.0f; // cm (100m)
 
+	/** Background image for event banners (PNG with alpha). nullptr = solid color.
+	 *  Import PNGs with compression set to UserInterface2D or BC7 to preserve alpha. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner|Image")
+	UTexture2D* BannerImage = nullptr;
+
+	/** Z-axis rotation (yaw) for event banners in degrees */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
+	float BannerRotationYaw = 0.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner")
 	int32 MaxActiveBanners = 20;
 
@@ -174,6 +185,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Marker")
 	FLinearColor MarkerColor = FLinearColor(0.2f, 0.8f, 1.0f, 1.0f); // cyan
 
+	/** Background image for altitude markers (PNG with alpha). nullptr = solid color.
+	 *  Import PNGs with compression set to UserInterface2D or BC7 to preserve alpha. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Marker|Image")
+	UTexture2D* MarkerImage = nullptr;
+
+	/** Z-axis rotation (yaw) for altitude markers in degrees */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Marker")
+	float MarkerRotationYaw = 0.0f;
+
 	/** Text size for altitude markers (cm) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Marker|Text")
 	float MarkerTextSize = 150.0f;
@@ -194,6 +214,10 @@ public:
 	/** Use opaque banner material for dev wireframe visibility (no alpha/fade) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev Visualization")
 	bool bDevOpaqueBanners = false;
+
+	/** Preview alpha channel as grayscale (white=opaque, black=transparent) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev Visualization")
+	bool bShowAlphaPreview = false;
 
 	/** Rocket body height in meters (pivot at engine end, grows upward). SLS Block 1 = 98m. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dev Visualization")
@@ -293,6 +317,10 @@ private:
 	bool bDevVisLastState = false;
 	bool bCameraViewSet = false;
 	bool bDevCameraLastState = false;
+	bool bAlphaPreviewLastState = false;
+
+	UPROPERTY()
+	UMaterialInterface* AlphaPreviewMaterial = nullptr;
 	float FreezeFrameAltitudeLast = -1.0f;
 	FString FreezeFrameEventLabelLast;
 
@@ -339,4 +367,7 @@ private:
 
 	UPROPERTY()
 	ARocketARHUD* HUDOverlay = nullptr;
+
+	UPROPERTY()
+	URocketARInputComponent* RocketARInput = nullptr;
 };

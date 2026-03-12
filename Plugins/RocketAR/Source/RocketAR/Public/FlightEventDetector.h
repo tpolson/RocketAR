@@ -61,6 +61,7 @@ private:
 
 	void FireEvent(EFlightEvent EventType, const FProcessedTelemetryData& Data, const FString& Label);
 	void FireCustomEvent(const FCustomEventDefinition& Def, const FProcessedTelemetryData& Data, const FString& Label);
+	void ApplyTextOffsetOverride(EFlightEvent EventType, FFlightEventData& OutData) const;
 	bool IsEventLatched(EFlightEvent EventType) const;
 	void LatchEvent(EFlightEvent EventType);
 
@@ -104,7 +105,8 @@ private:
 	double MaxQRisingStartMET = -1.0;
 	bool bMaxQRising = false;
 	double MaxQLastHigherTime = 0.0;
-	bool bMaxQConfirmed = false;
+	// Thrust array size warning (fire once per flight)
+	bool bThrustArrayWarned = false;
 
 	// Altitude marker tracking
 	double LastAltitudeMarker = 0.0;

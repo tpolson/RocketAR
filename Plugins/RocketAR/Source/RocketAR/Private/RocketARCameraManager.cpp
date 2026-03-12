@@ -10,7 +10,7 @@
 
 URocketARCameraManager::URocketARCameraManager()
 {
-	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bCanEverTick = false;
 }
 
 void URocketARCameraManager::SetGeoreference(ACesiumGeoreference* InGeoreference)
@@ -126,8 +126,3 @@ void URocketARCameraManager::UpdateFromTelemetry(const FProcessedTelemetryData& 
 	}
 }
 
-void URocketARCameraManager::TickComponent(float DeltaTime, ELevelTick TickType,
-	FActorComponentTickFunction* ThisTickFunction)
-{
-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-}

@@ -10,7 +10,7 @@
 
 URocketARInputComponent::URocketARInputComponent()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	PrimaryComponentTick.bCanEverTick = true;
 }
 
 void URocketARInputComponent::BeginPlay()
@@ -20,6 +20,17 @@ void URocketARInputComponent::BeginPlay()
 	// Get the owning setup actor
 	SetupActor = Cast<ARocketARSetupActor>(GetOwner());
 	if (SetupActor)
+	{
+		SetupBindings(SetupActor);
+	}
+}
+
+void URocketARInputComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	// Defer input binding until PlayerController and its InputComponent are ready
+	if (!bBindingsReady && SetupActor)
 	{
 		SetupBindings(SetupActor);
 	}
@@ -36,10 +47,17 @@ void URocketARInputComponent::SetupBindings(ARocketARSetupActor* InSetupActor)
 	APlayerController* PC = World->GetFirstPlayerController();
 	if (!PC) return;
 
-	UInputComponent* InputComp = PC->InputComponent;
+	// Ensure game input is active — without a GameMode/Pawn, UE may default to UI-only
+	PC->SetInputMode(FInputModeGameAndUI().SetHideCursorDuringCapture(false));
+	PC->bShowMouseCursor = true;
+
+	// Enable input on the setup actor — puts its InputComponent on the PC's input stack
+	SetupActor->EnableInput(PC);
+
+	UInputComponent* InputComp = SetupActor->InputComponent;
 	if (!InputComp) return;
 
-	// Bind directly to keys (no need for action mappings in DefaultInput.ini)
+	// Bind directly to keys
 	InputComp->BindKey(EKeys::SpaceBar, IE_Pressed, this, &URocketARInputComponent::OnTogglePlayPause);
 	InputComp->BindKey(EKeys::Right, IE_Pressed, this, &URocketARInputComponent::OnScrubForward);
 	InputComp->BindKey(EKeys::Left, IE_Pressed, this, &URocketARInputComponent::OnScrubBackward);
@@ -50,8 +68,11 @@ void URocketARInputComponent::SetupBindings(ARocketARSetupActor* InSetupActor)
 	InputComp->BindKey(EKeys::F1, IE_Pressed, this, &URocketARInputComponent::OnToggleHUD);
 	InputComp->BindKey(EKeys::F2, IE_Pressed, this, &URocketARInputComponent::OnToggleStats);
 	InputComp->BindKey(EKeys::Tab, IE_Pressed, this, &URocketARInputComponent::OnCycleBanner);
+	InputComp->BindKey(EKeys::F3, IE_Pressed, this, &URocketARInputComponent::OnToggleAlphaPreview);
 
-	UE_LOG(LogRocketAR, Log, TEXT("Input bindings set up (Space, Arrows, [], R, D, F1, F2, Tab)"));
+	bBindingsReady = true;
+	PrimaryComponentTick.SetTickFunctionEnable(false);
+	UE_LOG(LogRocketAR, Log, TEXT("Input bindings set up (Space, Arrows, [], R, D, F1, F2, F3, Tab)"));
 }
 
 void URocketARInputComponent::OnTogglePlayPause()
@@ -160,6 +181,14 @@ void URocketARInputComponent::OnToggleStats()
 	{
 		GEngine->Exec(GetWorld(), TEXT("stat RocketAR"));
 	}
+}
+
+void URocketARInputComponent::OnToggleAlphaPreview()
+{
+	if (!SetupActor) return;
+	SetupActor->bShowAlphaPreview = !SetupActor->bShowAlphaPreview;
+	UE_LOG(LogRocketAR, Log, TEXT("Input: Alpha Preview = %s"),
+		SetupActor->bShowAlphaPreview ? TEXT("ON") : TEXT("OFF"));
 }
 
 void URocketARInputComponent::OnCycleBanner()
