@@ -96,7 +96,7 @@ void ADevVisualizationActor::BeginPlay()
 		EarthMaterial = UMaterialInstanceDynamic::Create(AdditiveMat, this);
 		if (EarthMaterial)
 		{
-			EarthMaterial->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.1f, 0.2f, 0.8f, 1.0f));
+			EarthMaterial->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.02f, 0.03f, 0.15f, 1.0f));
 			EarthMesh->SetMaterial(0, EarthMaterial);
 		}
 	}
@@ -104,12 +104,16 @@ void ADevVisualizationActor::BeginPlay()
 	// Apply rocket dimensions (configurable via RocketHeight/RocketRadius)
 	UpdateRocketDimensions();
 
-	if (AdditiveMat)
+	// Rocket: opaque + emissive so it's solid and self-lit
+	UMaterialInterface* BaseMat = LoadObject<UMaterialInterface>(nullptr,
+		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+	if (BaseMat)
 	{
-		RocketMaterial = UMaterialInstanceDynamic::Create(AdditiveMat, this);
+		RocketMaterial = UMaterialInstanceDynamic::Create(BaseMat, this);
 		if (RocketMaterial)
 		{
 			RocketMaterial->SetVectorParameterValue(TEXT("Color"), FLinearColor(1.0f, 0.3f, 0.1f, 1.0f));
+			RocketMaterial->SetVectorParameterValue(TEXT("Emissive"), FLinearColor(1.0f, 0.3f, 0.1f, 1.0f));
 			RocketMesh->SetMaterial(0, RocketMaterial);
 		}
 	}
