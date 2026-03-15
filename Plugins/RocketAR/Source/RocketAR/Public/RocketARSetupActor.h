@@ -5,6 +5,7 @@
 #include "TelemetryProvider.h"
 #include "TelemetryTypes.h"
 #include "FlightEventTypes.h"
+#include "RocketARMediaOutput.h"
 #include "RocketARSetupActor.generated.h"
 
 class UTelemetrySubsystem;
@@ -18,6 +19,7 @@ class ABannerActor;
 class ADevVisualizationActor;
 class ARocketARHUD;
 class URocketARInputComponent;
+class URocketARMediaOutput;
 class UTexture2D;
 
 /**
@@ -273,6 +275,36 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CSV")
 	FString CSVFilePath = TEXT("Data/SimulatedTelemetry.csv");
 
+	// --- DeckLink Output ---
+
+	/** Enable DeckLink fill/key SDI output — captures production camera automatically */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DeckLink")
+	bool bEnableDeckLink = false;
+
+	/** Output resolution for DeckLink SDI */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DeckLink",
+		meta=(EditCondition="bEnableDeckLink"))
+	ERocketAROutputResolution DeckLinkOutputResolution = ERocketAROutputResolution::Res_1080p60;
+
+	/** Use Fill+Key (two SDI outputs for alpha keying). Off = Fill only (single HDMI/SDI). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DeckLink",
+		meta=(EditCondition="bEnableDeckLink"))
+	bool bDeckLinkFillAndKey = false;
+
+	/** Auto-start capture on play */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DeckLink",
+		meta=(EditCondition="bEnableDeckLink"))
+	bool bDeckLinkAutoStart = true;
+
+	/** Lock UE render loop to house sync */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DeckLink|Sync",
+		meta=(EditCondition="bEnableDeckLink"))
+	bool bDeckLinkGenlock = false;
+
+	/** Embed timecode in SDI output */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DeckLink|Sync",
+		meta=(EditCondition="bEnableDeckLink"))
+	bool bDeckLinkTimecode = false;
 
 	// --- Extrapolation ---
 
@@ -301,12 +333,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "RocketAR")
 	ADevVisualizationActor* GetDevVisActor() const { return DevVisActor; }
 
+	UFUNCTION(BlueprintCallable, Category = "RocketAR")
+	URocketARMediaOutput* GetMediaOutput() const { return MediaOutputComponent; }
+
 private:
 	void SetupGeoreference();
 	void SetupCamera();
 	void SetupCSVProvider();
 	void SetupDevVisualization();
 	void SetupDevCamera();
+	void SetupDeckLink();
 	void SetupHUD();
 	void SetupFreezeFrame();
 	void WireSubsystems();
@@ -362,4 +398,7 @@ private:
 
 	UPROPERTY()
 	URocketARInputComponent* RocketARInput = nullptr;
+
+	UPROPERTY()
+	URocketARMediaOutput* MediaOutputComponent = nullptr;
 };

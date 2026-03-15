@@ -7,6 +7,31 @@
 #include "Materials/MaterialExpressionVectorParameter.h"
 #include "UObject/ConstructorHelpers.h"
 
+/** Create a shared opaque unlit material — always bright, writes alpha. */
+static UMaterial* GetDevOpaqueMaterial()
+{
+	static TWeakObjectPtr<UMaterial> CachedMat;
+	if (CachedMat.IsValid()) return CachedMat.Get();
+
+	UMaterial* Mat = NewObject<UMaterial>(GetTransientPackage(), TEXT("DevOpaqueMat"), RF_Transient);
+	Mat->BlendMode = BLEND_Opaque;
+	Mat->SetShadingModel(MSM_Unlit);
+
+	auto* ColorParam = NewObject<UMaterialExpressionVectorParameter>(Mat);
+	ColorParam->ParameterName = TEXT("Color");
+	ColorParam->DefaultValue = FLinearColor(1.0f, 0.3f, 0.1f, 1.0f);
+	Mat->GetExpressionCollection().AddExpression(ColorParam);
+
+#if WITH_EDITOR
+	Mat->GetEditorOnlyData()->EmissiveColor.Connect(0, ColorParam);
+#endif
+
+	Mat->PreEditChange(nullptr);
+	Mat->PostEditChange();
+	CachedMat = Mat;
+	return Mat;
+}
+
 /** Create a shared additive-blend material that is visible in the viewport
  *  but does NOT write to the scene alpha channel (preserves broadcast key). */
 static UMaterial* GetDevAdditiveMaterial()
@@ -104,16 +129,14 @@ void ADevVisualizationActor::BeginPlay()
 	// Apply rocket dimensions (configurable via RocketHeight/RocketRadius)
 	UpdateRocketDimensions();
 
-	// Rocket: opaque + emissive so it's solid and self-lit
-	UMaterialInterface* BaseMat = LoadObject<UMaterialInterface>(nullptr,
-		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
-	if (BaseMat)
+	// Rocket: opaque unlit — solid, always bright, no lighting needed
+	UMaterial* RocketMat = GetDevOpaqueMaterial();
+	if (RocketMat)
 	{
-		RocketMaterial = UMaterialInstanceDynamic::Create(BaseMat, this);
+		RocketMaterial = UMaterialInstanceDynamic::Create(RocketMat, this);
 		if (RocketMaterial)
 		{
 			RocketMaterial->SetVectorParameterValue(TEXT("Color"), FLinearColor(1.0f, 0.3f, 0.1f, 1.0f));
-			RocketMaterial->SetVectorParameterValue(TEXT("Emissive"), FLinearColor(1.0f, 0.3f, 0.1f, 1.0f));
 			RocketMesh->SetMaterial(0, RocketMaterial);
 		}
 	}

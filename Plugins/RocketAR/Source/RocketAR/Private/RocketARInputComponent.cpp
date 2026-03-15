@@ -4,6 +4,7 @@
 #include "BannerManager.h"
 #include "FlightEventDetector.h"
 #include "DevVisualizationActor.h"
+#include "RocketARMediaOutput.h"
 #include "RocketARModule.h"
 #include "GameFramework/PlayerController.h"
 #include "Engine/World.h"
@@ -68,10 +69,11 @@ void URocketARInputComponent::SetupBindings(ARocketARSetupActor* InSetupActor)
 	InputComp->BindKey(EKeys::F1, IE_Pressed, this, &URocketARInputComponent::OnToggleHUD);
 	InputComp->BindKey(EKeys::F2, IE_Pressed, this, &URocketARInputComponent::OnToggleStats);
 	InputComp->BindKey(EKeys::Tab, IE_Pressed, this, &URocketARInputComponent::OnCycleBanner);
+	InputComp->BindKey(EKeys::F4, IE_Pressed, this, &URocketARInputComponent::OnToggleDeckLink);
 
 	bBindingsReady = true;
 	PrimaryComponentTick.SetTickFunctionEnable(false);
-	UE_LOG(LogRocketAR, Log, TEXT("Input bindings set up (Space, Arrows, [], R, D, F1, F2, Tab)"));
+	UE_LOG(LogRocketAR, Log, TEXT("Input bindings set up (Space, Arrows, [], R, D, F1, F2, F4, Tab)"));
 }
 
 void URocketARInputComponent::OnTogglePlayPause()
@@ -191,4 +193,29 @@ void URocketARInputComponent::OnCycleBanner()
 	CurrentBannerIndex = (CurrentBannerIndex + 1) % Banners->GetActiveBannerCount();
 	UE_LOG(LogRocketAR, Log, TEXT("Input: Cycle to banner %d/%d"),
 		CurrentBannerIndex + 1, Banners->GetActiveBannerCount());
+}
+
+void URocketARInputComponent::OnToggleDeckLink()
+{
+	if (!SetupActor) return;
+	URocketARMediaOutput* MediaOut = SetupActor->GetMediaOutput();
+	if (!MediaOut) return;
+
+	if (!MediaOut->IsDeckLinkAvailable())
+	{
+		UE_LOG(LogRocketAR, Warning, TEXT("Input: DeckLink not available"));
+		return;
+	}
+
+	if (MediaOut->IsCaptureActive())
+	{
+		MediaOut->StopCapture();
+		UE_LOG(LogRocketAR, Log, TEXT("Input: DeckLink STOPPED"));
+	}
+	else
+	{
+		const bool bStarted = MediaOut->StartCapture();
+		UE_LOG(LogRocketAR, Log, TEXT("Input: DeckLink %s"),
+			bStarted ? TEXT("STARTED") : TEXT("FAILED TO START"));
+	}
 }

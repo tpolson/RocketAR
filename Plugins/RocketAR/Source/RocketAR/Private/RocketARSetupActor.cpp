@@ -1,5 +1,6 @@
 #include "RocketARSetupActor.h"
 #include "RocketARInputComponent.h"
+#include "RocketARMediaOutput.h"
 #include "TelemetrySubsystem.h"
 #include "FlightEventDetector.h"
 #include "BannerManager.h"
@@ -35,6 +36,8 @@ ARocketARSetupActor::ARocketARSetupActor()
 	BannerManager = CreateDefaultSubobject<UBannerManager>(TEXT("BannerManager"));
 	CameraManager = CreateDefaultSubobject<URocketARCameraManager>(TEXT("CameraManager"));
 	RocketARInput = CreateDefaultSubobject<URocketARInputComponent>(TEXT("RocketARInput"));
+	MediaOutputComponent = CreateDefaultSubobject<URocketARMediaOutput>(TEXT("MediaOutput"));
+	MediaOutputComponent->bManualInit = true; // Defer until SetupDeckLink()
 }
 
 void ARocketARSetupActor::BeginPlay()
@@ -75,6 +78,12 @@ void ARocketARSetupActor::BeginPlay()
 	}
 
 	WireSubsystems();
+
+	if (bEnableDeckLink)
+	{
+		SetupDeckLink();
+	}
+
 	SetupHUD();
 
 	if (bFreezeFrameMode)
@@ -429,6 +438,24 @@ void ARocketARSetupActor::WireSubsystems()
 		EventDetector->Config.AltitudeMarkerInterval = AltitudeMarkerInterval;
 		EventDetector->Config.AltitudeMarkerAnticipation = AltitudeMarkerAnticipation;
 	}
+}
+
+void ARocketARSetupActor::SetupDeckLink()
+{
+	if (!MediaOutputComponent) return;
+
+	// Configure from setup actor properties
+	MediaOutputComponent->OutputResolution = DeckLinkOutputResolution;
+	MediaOutputComponent->bFillAndKey = bDeckLinkFillAndKey;
+	MediaOutputComponent->bAutoStart = bDeckLinkAutoStart;
+	MediaOutputComponent->bEnableGenlock = bDeckLinkGenlock;
+	MediaOutputComponent->bEnableTimecode = bDeckLinkTimecode;
+
+	// Trigger deferred init — creates output, sets up genlock/timecode, starts capture
+	MediaOutputComponent->Initialize();
+
+	UE_LOG(LogRocketAR, Log, TEXT("DeckLink: Setup complete (status: %s)"),
+		*MediaOutputComponent->GetStatusString());
 }
 
 void ARocketARSetupActor::OnTelemetryUpdated(const FProcessedTelemetryData& Data)
