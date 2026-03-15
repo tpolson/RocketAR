@@ -132,6 +132,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner|Text")
 	FVector BannerTextOffset = FVector::ZeroVector;
 
+	/** SDF edge sharpness for text rendering. Higher = sharper edges, lower = softer/anti-aliased.
+	 *  100 = binary cutoff (aliases at distance), 15-30 = smooth, 50 = moderate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner|Text", meta=(ClampMin="1.0", ClampMax="200.0"))
+	float TextSDFSharpness = 50.0f;
+
 	// --- Banner Slide Configuration ---
 
 	/** Delay (seconds) between event detection and banner spawn */
@@ -203,6 +208,10 @@ public:
 	/** Local offset of text from marker root (cm) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Marker|Text")
 	FVector MarkerTextOffset = FVector::ZeroVector;
+
+	/** SDF edge sharpness for altitude marker text. Same scale as banner TextSDFSharpness. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Marker|Text", meta=(ClampMin="1.0", ClampMax="200.0"))
+	float MarkerSDFSharpness = 50.0f;
 
 	/** Seconds of look-ahead for predictive altitude marker firing */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Altitude Marker")

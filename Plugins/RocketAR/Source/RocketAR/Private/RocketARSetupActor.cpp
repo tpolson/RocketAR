@@ -407,6 +407,7 @@ void ARocketARSetupActor::WireSubsystems()
 		BannerManager->AnticipationSeconds = AnticipationSeconds;
 		BannerManager->BannerTextSize = BannerTextSize;
 		BannerManager->BannerTextOffset = BannerTextOffset;
+		BannerManager->TextSDFSharpness = TextSDFSharpness;
 		BannerManager->BannerRotationYaw = BannerRotationYaw;
 	}
 
@@ -425,6 +426,7 @@ void ARocketARSetupActor::WireSubsystems()
 		BannerManager->MarkerRotationYaw = MarkerRotationYaw;
 		BannerManager->MarkerTextSize = MarkerTextSize;
 		BannerManager->MarkerTextOffset = MarkerTextOffset;
+		BannerManager->MarkerSDFSharpness = MarkerSDFSharpness;
 		BannerManager->bShowDebugMessages = bShowDebugMessages;
 		BannerManager->bDevOpaqueBanners = bDevOpaqueBanners;
 		BannerManager->BannerImage = BannerImage;
@@ -575,6 +577,7 @@ void ARocketARSetupActor::Tick(float DeltaTime)
 		BannerManager->AnticipationSeconds = AnticipationSeconds;
 		BannerManager->BannerTextSize = BannerTextSize;
 		BannerManager->BannerTextOffset = BannerTextOffset;
+		BannerManager->TextSDFSharpness = TextSDFSharpness;
 	}
 
 	// Live-sync marker geometry, text config, and debug flag
@@ -586,6 +589,7 @@ void ARocketARSetupActor::Tick(float DeltaTime)
 		BannerManager->MarkerRotationYaw = MarkerRotationYaw;
 		BannerManager->MarkerTextSize = MarkerTextSize;
 		BannerManager->MarkerTextOffset = MarkerTextOffset;
+		BannerManager->MarkerSDFSharpness = MarkerSDFSharpness;
 		BannerManager->bShowDebugMessages = bShowDebugMessages;
 		BannerManager->bDevOpaqueBanners = bDevOpaqueBanners;
 		BannerManager->BannerImage = BannerImage;

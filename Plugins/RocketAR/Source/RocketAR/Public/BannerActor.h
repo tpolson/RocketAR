@@ -91,6 +91,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner|Text")
 	FColor TextColor = FColor::White;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner|Text")
+	float TextSDFSharpness = 50.0f;
+
 protected:
 	void UpdateSpawnAnimation(float DeltaTime);
 	void UpdateFadeOut(float DeltaTime);

@@ -133,6 +133,7 @@ ABannerActor* UBannerManager::SpawnBannerFromQueue(const FPendingBanner& Pending
 
 	// Configure text before InitBanner
 	Banner->TextWorldSize = bIsMarker ? MarkerTextSize : BannerTextSize;
+	Banner->TextSDFSharpness = bIsMarker ? MarkerSDFSharpness : TextSDFSharpness;
 	if (Pending.EventData.bHasTextOffsetOverride)
 		Banner->TextOffset = Pending.EventData.TextOffsetOverride;
 	else

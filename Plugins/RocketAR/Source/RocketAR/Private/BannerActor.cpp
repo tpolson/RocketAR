@@ -155,19 +155,24 @@ static UMaterial* GetTextTranslucentMaterial()
 	auto* MulColor = NewObject<UMaterialExpressionMultiply>(Mat);
 	Mat->GetExpressionCollection().AddExpression(MulColor);
 
-	// Threshold the distance field for a clean binary matte:
+	// Threshold the distance field:
 	// FontAlpha is SDF: 0.5 = edge, >0.5 = inside glyph, <0.5 = outside
-	// (FontAlpha - 0.5) * 100 → large positive inside, large negative outside
-	// Renderer clamps opacity to 0-1 → clean binary mask
+	// (FontAlpha - 0.5) * Sharpness → controls edge hardness
+	// Adjustable via "Sharpness" scalar parameter on each banner's MID.
 
 	// Subtract: FontAlpha - 0.5
 	auto* SubThreshold = NewObject<UMaterialExpressionSubtract>(Mat);
 	SubThreshold->ConstB = 0.5f;
 	Mat->GetExpressionCollection().AddExpression(SubThreshold);
 
-	// Multiply by sharpness factor to create hard edge
+	// Sharpness parameter — adjustable per banner instance
+	auto* SharpnessParam = NewObject<UMaterialExpressionScalarParameter>(Mat);
+	SharpnessParam->ParameterName = TEXT("Sharpness");
+	SharpnessParam->DefaultValue = 50.0f;
+	Mat->GetExpressionCollection().AddExpression(SharpnessParam);
+
+	// Multiply by sharpness factor
 	auto* MulSharpen = NewObject<UMaterialExpressionMultiply>(Mat);
-	MulSharpen->ConstB = 100.0f;
 	Mat->GetExpressionCollection().AddExpression(MulSharpen);
 
 	// Multiply sharpened mask by Opacity parameter for fade animation
@@ -180,6 +185,7 @@ static UMaterial* GetTextTranslucentMaterial()
 
 	SubThreshold->A.Connect(4, FontParam); // output 4 = Alpha (SDF value)
 	MulSharpen->A.Connect(0, SubThreshold);
+	MulSharpen->B.Connect(0, SharpnessParam);
 	MulOpacity->A.Connect(0, MulSharpen);
 	MulOpacity->B.Connect(0, OpacityParam);
 
@@ -326,6 +332,7 @@ void ABannerActor::InitBanner(
 			{
 				TextDynamicMaterial->SetVectorParameterValue(TEXT("Color"), FLinearColor(TextColor));
 				TextDynamicMaterial->SetScalarParameterValue(TEXT("Opacity"), bUseOpaqueMaterial ? 1.0f : 0.0f);
+				TextDynamicMaterial->SetScalarParameterValue(TEXT("Sharpness"), TextSDFSharpness);
 				TextComponent->SetMaterial(0, TextDynamicMaterial);
 			}
 		}

@@ -88,12 +88,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Text")
 	FVector BannerTextOffset = FVector::ZeroVector;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Text")
+	float TextSDFSharpness = 50.0f;
+
 	// Text configuration for altitude markers
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Text")
 	float MarkerTextSize = 150.0f; // cm
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Text")
 	FVector MarkerTextOffset = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Text")
+	float MarkerSDFSharpness = 50.0f;
 
 	// Altitude marker geometry (distinct from event banners)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Banner Config|Marker")
