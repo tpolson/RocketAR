@@ -174,6 +174,7 @@ void URocketARMediaOutput::CreateMediaOutput()
 
 	BMOutput->OutputConfiguration = MatchedConfig;
 	BMOutput->PixelFormat = EBlackmagicMediaOutputPixelFormat::PF_8BIT_YUV;
+	BMOutput->bWaitForSyncEvent = true; // Lock UE to DeckLink's free-run clock
 	BMOutput->bLogDropFrame = true;
 
 	CreatedMediaOutput = BMOutput;
