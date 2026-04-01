@@ -7,6 +7,7 @@
 
 class UStaticMeshComponent;
 class UMaterialInstanceDynamic;
+class URocketDefinition;
 
 /**
  * Development visualization: Earth sphere + rocket cylinder.
@@ -52,6 +53,21 @@ public:
 	/** Apply current height/radius to mesh scale and offset */
 	void UpdateRocketDimensions();
 
+	/**
+	 * Apply a rocket definition: swaps to the definition's mesh (or restores cylinder fallback),
+	 * updates Height/Radius from the definition, and applies production visibility.
+	 * Call from SetupActor::BeginPlay after this actor is spawned.
+	 */
+	void ApplyRocketDefinition(URocketDefinition* Definition);
+
+	/**
+	 * Control whether the rocket mesh writes into the broadcast SDI output.
+	 * true  = opaque unlit material → mesh visible in fill + key channels.
+	 * false = additive material → visible in viewport, invisible in broadcast key.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Production")
+	void SetProductionVisible(bool bVisible);
+
 private:
 	UPROPERTY()
 	UStaticMeshComponent* EarthMesh = nullptr;
@@ -73,4 +89,12 @@ private:
 	FQuat RocketOrientation = FQuat::Identity;
 
 	bool bIsVisible = true;
+	bool bProductionVisible = false;
+
+	UPROPERTY()
+	URocketDefinition* ActiveDefinition = nullptr;
+
+	/** Hard-loaded mesh ref from the definition's TSoftObjectPtr (set by ApplyRocketDefinition) */
+	UPROPERTY()
+	UStaticMesh* LoadedRocketMesh = nullptr;
 };

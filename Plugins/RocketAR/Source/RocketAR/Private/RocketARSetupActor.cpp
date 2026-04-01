@@ -1,4 +1,5 @@
 #include "RocketARSetupActor.h"
+#include "RocketDefinition.h"
 #include "RocketARInputComponent.h"
 #include "RocketARMediaOutput.h"
 #include "TelemetrySubsystem.h"
@@ -67,10 +68,25 @@ void ARocketARSetupActor::BeginPlay()
 	// Attach camera and banners to unscaled rocket mount point so they move rigidly with the rocket
 	if (DevVisActor && DevVisActor->GetRocketMountPoint())
 	{
-		if (CameraManager)
+		if (ActiveRocket)
 		{
-			CameraManager->AttachToComponent(DevVisActor->GetRocketMountPoint());
+			// Rocket library path: apply definition mesh/visibility, spawn all rig cameras
+			DevVisActor->ApplyRocketDefinition(ActiveRocket);
+			if (CameraManager)
+			{
+				CameraManager->SpawnRigsFromDefinition(ActiveRocket, DevVisActor->GetRocketMountPoint());
+				CameraManager->SetActiveRigIndex(ActiveCameraRigIndex);
+			}
 		}
+		else
+		{
+			// Legacy path: single camera attached to mount point
+			if (CameraManager)
+			{
+				CameraManager->AttachToComponent(DevVisActor->GetRocketMountPoint());
+			}
+		}
+
 		if (BannerManager)
 		{
 			BannerManager->SetAttachTarget(DevVisActor->GetRocketMountPoint());
@@ -370,6 +386,15 @@ void ARocketARSetupActor::SetupFreezeFrame()
 		RocketUEPos.X, RocketUEPos.Y, RocketUEPos.Z);
 }
 
+void ARocketARSetupActor::SetActiveCameraRig(int32 RigIndex)
+{
+	ActiveCameraRigIndex = RigIndex;
+	if (CameraManager)
+	{
+		CameraManager->SetActiveRigIndex(RigIndex);
+	}
+}
+
 void ARocketARSetupActor::WireSubsystems()
 {
 	UWorld* World = GetWorld();
@@ -535,7 +560,11 @@ void ARocketARSetupActor::Tick(float DeltaTime)
 		APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
 		if (PC)
 		{
-			ACineCameraActor* Target = (bUseDevCamera && DevCameraActor) ? DevCameraActor : CameraActor;
+			ACineCameraActor* Target = nullptr;
+			if (bUseDevCamera && DevCameraActor)
+				Target = DevCameraActor;
+			else if (CameraManager)
+				Target = CameraManager->GetCameraActor(); // returns active rig or legacy camera
 			if (Target)
 			{
 				PC->SetViewTarget(Target);
@@ -552,8 +581,8 @@ void ARocketARSetupActor::Tick(float DeltaTime)
 		SetupHUD();
 	}
 
-	// Sync config changes at runtime
-	if (CameraManager)
+	// Sync camera config at runtime — legacy single-camera mode only
+	if (CameraManager && !ActiveRocket)
 	{
 		CameraManager->CameraMountOffset = CameraMountOffset;
 		CameraManager->CameraMountRotation = CameraMountRotation;
@@ -611,8 +640,9 @@ void ARocketARSetupActor::Tick(float DeltaTime)
 		EventDetector->Config.AltitudeMarkerAnticipation = AltitudeMarkerAnticipation;
 	}
 
-	// Live-sync rocket dimensions for runtime tweaking
-	if (DevVisActor)
+	// Live-sync rocket dimensions for runtime tweaking — legacy mode only
+	// (when ActiveRocket is set, dimensions come from the definition)
+	if (DevVisActor && !ActiveRocket)
 	{
 		DevVisActor->RocketHeight = RocketHeight;
 		DevVisActor->RocketRadius = RocketRadius;

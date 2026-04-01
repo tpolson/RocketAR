@@ -1,8 +1,10 @@
 #include "RocketARCameraManager.h"
+#include "RocketDefinition.h"
 #include "RocketARModule.h"
 #include "CineCameraActor.h"
 #include "CineCameraComponent.h"
 #include "Engine/World.h"
+#include "GameFramework/PlayerController.h"
 
 #if WITH_CESIUM
 #include "CesiumGeoreference.h"
@@ -34,6 +36,8 @@ void URocketARCameraManager::SetCameraActor(ACineCameraActor* InCamera)
 
 void URocketARCameraManager::AttachToComponent(USceneComponent* Parent)
 {
+	// No-op if rig cameras are already managing attachment
+	if (SpawnedRigActors.Num() > 0) return;
 	if (!CameraActor || !Parent) return;
 
 	CameraActor->AttachToComponent(Parent, FAttachmentTransformRules::KeepRelativeTransform);
@@ -90,6 +94,79 @@ FQuat URocketARCameraManager::ECEFRotToUE(const FQuat& ECEFRot) const
 	}
 #endif
 	return ECEFRot;
+}
+
+ACineCameraActor* URocketARCameraManager::GetCameraActor() const
+{
+	if (SpawnedRigActors.IsValidIndex(ActiveRigIndex))
+	{
+		return SpawnedRigActors[ActiveRigIndex];
+	}
+	return CameraActor;
+}
+
+void URocketARCameraManager::SpawnRigsFromDefinition(URocketDefinition* Definition, USceneComponent* Parent)
+{
+	for (ACineCameraActor* OldActor : SpawnedRigActors)
+	{
+		if (OldActor) OldActor->Destroy();
+	}
+	SpawnedRigActors.Empty();
+
+	if (!Definition || !Parent || !GetWorld()) return;
+
+	for (const FRocketCameraRig& Rig : Definition->CameraRigs)
+	{
+		FActorSpawnParameters Params;
+		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		ACineCameraActor* NewCamera = GetWorld()->SpawnActor<ACineCameraActor>(
+			ACineCameraActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+		if (NewCamera)
+		{
+			NewCamera->AttachToComponent(Parent, FAttachmentTransformRules::KeepRelativeTransform);
+			ApplyRigTransform(NewCamera, Rig);
+			SpawnedRigActors.Add(NewCamera);
+		}
+	}
+
+	// Clamp index in case new definition has fewer rigs
+	ActiveRigIndex = FMath::Clamp(ActiveRigIndex, 0, FMath::Max(SpawnedRigActors.Num() - 1, 0));
+
+	UE_LOG(LogRocketAR, Log, TEXT("CameraManager: spawned %d rig(s) for '%s'"),
+		SpawnedRigActors.Num(), *Definition->RocketName.ToString());
+}
+
+void URocketARCameraManager::ApplyRigTransform(ACineCameraActor* Camera, const FRocketCameraRig& Rig)
+{
+	if (!Camera) return;
+
+	const FQuat MountRotQuat = Rig.MountRotation.Quaternion();
+	const FVector AimedForward = MountRotQuat.GetForwardVector();
+	const FQuat OpticalRollQuat(AimedForward, FMath::DegreesToRadians(Rig.OpticalRoll));
+	const FQuat FinalRot = OpticalRollQuat * MountRotQuat;
+
+	Camera->SetActorRelativeLocation(Rig.MountOffset);
+	Camera->SetActorRelativeRotation(FinalRot.Rotator());
+
+	UCineCameraComponent* CineComp = Camera->GetCineCameraComponent();
+	if (CineComp)
+	{
+		CineComp->SetFieldOfView(Rig.HFOV);
+	}
+}
+
+void URocketARCameraManager::SetActiveRigIndex(int32 NewIndex)
+{
+	if (!SpawnedRigActors.IsValidIndex(NewIndex)) return;
+
+	ActiveRigIndex = NewIndex;
+
+	APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+	if (PC)
+	{
+		PC->SetViewTarget(SpawnedRigActors[NewIndex]);
+		UE_LOG(LogRocketAR, Log, TEXT("CameraManager: active rig set to index %d"), NewIndex);
+	}
 }
 
 void URocketARCameraManager::UpdateFromTelemetry(const FProcessedTelemetryData& Data)

@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "TelemetryTypes.h"
+#include "RocketDefinition.h"
 #include "RocketARCameraManager.generated.h"
 
 class ACineCameraActor;
@@ -30,12 +31,27 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Camera")
 	void UpdateFromTelemetry(const FProcessedTelemetryData& Data);
 
-	/** Get the managed camera actor */
+	/** Get the active camera actor (active rig if rigs are spawned, otherwise legacy camera) */
 	UFUNCTION(BlueprintCallable, Category = "Camera")
-	ACineCameraActor* GetCameraActor() const { return CameraActor; }
+	ACineCameraActor* GetCameraActor() const;
 
-	/** Set or create the camera actor */
+	/** Set or create the camera actor (legacy single-camera path) */
 	void SetCameraActor(ACineCameraActor* InCamera);
+
+	/**
+	 * Spawn all camera rigs from a rocket definition, attached to Parent.
+	 * All rigs are active simultaneously; ActiveRigIndex selects which feeds output.
+	 * Replaces any previously spawned rigs.
+	 */
+	void SpawnRigsFromDefinition(URocketDefinition* Definition, USceneComponent* Parent);
+
+	/** Switch the active output camera. Calls SetViewTarget on the first PlayerController. */
+	UFUNCTION(BlueprintCallable, Category = "Camera Rigs")
+	void SetActiveRigIndex(int32 NewIndex);
+
+	/** Index into the spawned rig array that currently feeds the output */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera Rigs", meta = (ClampMin = "0"))
+	int32 ActiveRigIndex = 0;
 
 	// --- Configuration ---
 
@@ -63,9 +79,14 @@ private:
 	ACineCameraActor* CameraActor = nullptr;
 
 	UPROPERTY()
+	TArray<ACineCameraActor*> SpawnedRigActors;
+
+	UPROPERTY()
 	ACesiumGeoreference* Georeference = nullptr;
 
 	bool bAttachedToParent = false;
+
+	void ApplyRigTransform(ACineCameraActor* Camera, const FRocketCameraRig& Rig);
 
 	FVector ECEFToUE(const FVector& ECEFPos) const;
 	FQuat ECEFRotToUE(const FQuat& ECEFRot) const;
