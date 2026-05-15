@@ -9,6 +9,7 @@ class UBlackmagicCustomTimeStep;
 class UBlackmagicTimecodeProvider;
 class UMediaCapture;
 class UMediaOutput;
+class UTextureRenderTarget2D;
 
 /**
  * Output resolution presets for DeckLink SDI output.
@@ -25,7 +26,10 @@ enum class ERocketAROutputResolution : uint8
 /**
  * DeckLink fill/key SDI output component.
  * Creates a BlackmagicMediaOutput programmatically, configures it for fill/key,
- * and captures the active scene viewport (production camera) automatically.
+ * and captures a UTextureRenderTarget2D supplied by the camera manager
+ * (each rig owns its own production-camera SceneCapture). The game viewport
+ * is decoupled from broadcast output — operator UI on the viewport never
+ * appears in SDI.
  *
  * No manual asset creation required — just enable DeckLink on the setup actor,
  * pick a resolution, and hit Play.
@@ -106,6 +110,20 @@ public:
 	/** Enable timecode embedding */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DeckLink|Sync")
 	bool bEnableTimecode = false;
+
+	// --- Source ---
+
+	/** Render target captured into the SDI fill/key feed. Supplied by the camera manager. */
+	UPROPERTY(BlueprintReadWrite, Category = "DeckLink")
+	TObjectPtr<UTextureRenderTarget2D> SourceRenderTarget;
+
+	/** Swap the source render target. If currently capturing, the capture is restarted on the new RT. */
+	UFUNCTION(BlueprintCallable, Category = "DeckLink")
+	void SetSourceRenderTarget(UTextureRenderTarget2D* RT);
+
+	/** Delegate target for URocketARCameraManager::OnActiveRigChanged. */
+	UFUNCTION()
+	void OnActiveRigChanged(UTextureRenderTarget2D* NewRT);
 
 private:
 	/** Create and configure a UBlackmagicMediaOutput programmatically */

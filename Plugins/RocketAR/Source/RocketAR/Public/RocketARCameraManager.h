@@ -8,10 +8,18 @@
 
 class ACineCameraActor;
 class ACesiumGeoreference;
+class USceneCaptureComponent2D;
+class UTextureRenderTarget2D;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnActiveRigChanged, UTextureRenderTarget2D*, NewRenderTarget);
 
 /**
  * Manages the CG camera: ECEF position + quaternion → UE transform,
  * with configurable body-fixed mounting offset and FOV.
+ *
+ * Each rig owns a SceneCaptureComponent2D + TextureRenderTarget2D pair so the
+ * broadcast feed renders independently of the game viewport (the viewport is
+ * free for an operator UI / debug overlays without bleeding into SDI).
  */
 UCLASS(BlueprintType, meta=(BlueprintSpawnableComponent))
 class ROCKETAR_API URocketARCameraManager : public UActorComponent
@@ -49,9 +57,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Camera Rigs")
 	void SetActiveRigIndex(int32 NewIndex);
 
+	/** Render target of the currently active rig. Feeds the DeckLink MediaCapture. */
+	UFUNCTION(BlueprintCallable, Category = "Camera Rigs")
+	UTextureRenderTarget2D* GetActiveProductionRenderTarget() const;
+
+	/** Broadcast when the active rig changes; consumers re-bind to the new RT. */
+	UPROPERTY(BlueprintAssignable, Category = "Camera Rigs")
+	FOnActiveRigChanged OnActiveRigChanged;
+
 	/** Index into the spawned rig array that currently feeds the output */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera Rigs", meta = (ClampMin = "0"))
 	int32 ActiveRigIndex = 0;
+
+	/** Resolution of each rig's production render target. Must match the DeckLink output resolution. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera Rigs")
+	FIntPoint ProductionRenderResolution = FIntPoint(1920, 1080);
 
 	// --- Configuration ---
 
@@ -74,6 +94,12 @@ public:
 	/** Apply mount offset and optical roll to the attached camera */
 	void UpdateRelativeTransform();
 
+	/**
+	 * Configure a SceneCaptureComponent2D + RenderTarget for alpha-safe broadcast capture.
+	 * Public so other systems (e.g. operator preview window) can reuse the same profile.
+	 */
+	static void ConfigureAlphaSafeCapture(USceneCaptureComponent2D* Capture, UTextureRenderTarget2D* RT);
+
 private:
 	UPROPERTY()
 	ACineCameraActor* CameraActor = nullptr;
@@ -81,12 +107,26 @@ private:
 	UPROPERTY()
 	TArray<ACineCameraActor*> SpawnedRigActors;
 
+	/** Per-rig SceneCapture components, parallel to SpawnedRigActors. */
+	UPROPERTY()
+	TArray<USceneCaptureComponent2D*> RigCaptures;
+
+	/** Per-rig render targets, parallel to SpawnedRigActors. */
+	UPROPERTY()
+	TArray<UTextureRenderTarget2D*> RigRenderTargets;
+
 	UPROPERTY()
 	ACesiumGeoreference* Georeference = nullptr;
 
 	bool bAttachedToParent = false;
 
 	void ApplyRigTransform(ACineCameraActor* Camera, const FRocketCameraRig& Rig);
+
+	/** Spawn + attach a SceneCapture/RT pair for one rig camera. */
+	void SpawnCaptureForRig(ACineCameraActor* Camera, float HFOV);
+
+	/** Destroy all rig SceneCapture/RT pairs (called before re-spawning). */
+	void TeardownRigCaptures();
 
 	FVector ECEFToUE(const FVector& ECEFPos) const;
 	FQuat ECEFRotToUE(const FQuat& ECEFRot) const;

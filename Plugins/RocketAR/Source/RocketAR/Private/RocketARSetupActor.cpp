@@ -13,6 +13,7 @@
 #include "BannerActor.h"
 #include "CineCameraActor.h"
 #include "CineCameraComponent.h"
+#include "Engine/TextureRenderTarget2D.h"
 #include "Engine/DirectionalLight.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Engine/SkyLight.h"
@@ -64,6 +65,23 @@ void ARocketARSetupActor::BeginPlay()
 	}
 
 	SetupDevVisualization();
+
+	// Propagate DeckLink output resolution to the camera manager so each rig's
+	// production render target matches the SDI output (avoids MediaCapture resize).
+	if (CameraManager && bEnableDeckLink)
+	{
+		switch (DeckLinkOutputResolution)
+		{
+		case ERocketAROutputResolution::Res_1080p60:
+		case ERocketAROutputResolution::Res_1080p5994:
+			CameraManager->ProductionRenderResolution = FIntPoint(1920, 1080);
+			break;
+		case ERocketAROutputResolution::Res_2160p60:
+		case ERocketAROutputResolution::Res_2160p5994:
+			CameraManager->ProductionRenderResolution = FIntPoint(3840, 2160);
+			break;
+		}
+	}
 
 	// Attach camera and banners to unscaled rocket mount point so they move rigidly with the rocket
 	if (DevVisActor && DevVisActor->GetRocketMountPoint())
@@ -138,6 +156,27 @@ void ARocketARSetupActor::SetupGeoreference()
 		Georeference->SetOriginHeight(LaunchPadAltitude);
 		UE_LOG(LogRocketAR, Log, TEXT("Georeference set to: Lat=%.4f, Lon=%.4f, Alt=%.1f"),
 			LaunchPadLatitude, LaunchPadLongitude, LaunchPadAltitude);
+
+		// Earth center (0,0,0 ECEF) must map to a large UE-space vector (~6371 km below origin).
+		// Identity / near-zero result means Cesium failed to initialize the transform.
+		const FVector EarthCenterUE = Georeference->TransformEarthCenteredEarthFixedPositionToUnreal(FVector::ZeroVector);
+		const double EarthCenterDistCm = EarthCenterUE.Size();
+		constexpr double MinExpectedEarthRadiusCm = 6.0e8;
+		if (EarthCenterDistCm < MinExpectedEarthRadiusCm)
+		{
+			UE_LOG(LogRocketAR, Error,
+				TEXT("Georeference sanity check FAILED: Earth center -> UE=%s (%.0f cm, expected > %.0f cm). Cesium may not be initialized."),
+				*EarthCenterUE.ToString(), EarthCenterDistCm, MinExpectedEarthRadiusCm);
+		}
+		else
+		{
+			UE_LOG(LogRocketAR, Log, TEXT("Georeference sanity check OK: Earth center %.0f km from UE origin"),
+				EarthCenterDistCm / 1.0e5);
+		}
+	}
+	else
+	{
+		UE_LOG(LogRocketAR, Error, TEXT("Failed to spawn ACesiumGeoreference — ECEF conversion will not work"));
 	}
 #else
 	UE_LOG(LogRocketAR, Warning, TEXT("Cesium for Unreal not available — ECEF conversion will be approximate"));
@@ -477,6 +516,22 @@ void ARocketARSetupActor::SetupDeckLink()
 	MediaOutputComponent->bAutoStart = bDeckLinkAutoStart;
 	MediaOutputComponent->bEnableGenlock = bDeckLinkGenlock;
 	MediaOutputComponent->bEnableTimecode = bDeckLinkTimecode;
+
+	// Wire the broadcast feed to the active rig's render target (set before Initialize()
+	// so auto-start finds a valid source). Re-wires automatically on rig switch.
+	if (CameraManager)
+	{
+		UTextureRenderTarget2D* ActiveRT = CameraManager->GetActiveProductionRenderTarget();
+		MediaOutputComponent->SetSourceRenderTarget(ActiveRT);
+		CameraManager->OnActiveRigChanged.AddDynamic(MediaOutputComponent, &URocketARMediaOutput::OnActiveRigChanged);
+
+		if (!ActiveRT)
+		{
+			UE_LOG(LogRocketAR, Warning,
+				TEXT("DeckLink: No active rig render target — SDI output will not start. "
+				     "Assign an ActiveRocket with at least one camera rig."));
+		}
+	}
 
 	// Trigger deferred init — creates output, sets up genlock/timecode, starts capture
 	MediaOutputComponent->Initialize();

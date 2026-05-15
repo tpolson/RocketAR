@@ -2,6 +2,7 @@
 #include "RocketARModule.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
+#include "Engine/TextureRenderTarget2D.h"
 #include "MediaCapture.h"
 #include "MediaOutput.h"
 
@@ -203,6 +204,32 @@ bool URocketARMediaOutput::StartCapture()
 		return true;
 	}
 
+	if (!SourceRenderTarget)
+	{
+		UE_LOG(LogRocketAR, Error, TEXT("DeckLink: No SourceRenderTarget set — call SetSourceRenderTarget() first"));
+		return false;
+	}
+
+	// Validate RT resolution matches the configured DeckLink output.
+	FIntPoint ExpectedRes;
+	switch (OutputResolution)
+	{
+	case ERocketAROutputResolution::Res_1080p60:
+	case ERocketAROutputResolution::Res_1080p5994:
+		ExpectedRes = FIntPoint(1920, 1080); break;
+	case ERocketAROutputResolution::Res_2160p60:
+	case ERocketAROutputResolution::Res_2160p5994:
+		ExpectedRes = FIntPoint(3840, 2160); break;
+	}
+	const FIntPoint RTRes(SourceRenderTarget->SizeX, SourceRenderTarget->SizeY);
+	if (RTRes != ExpectedRes)
+	{
+		UE_LOG(LogRocketAR, Error,
+			TEXT("DeckLink: SourceRenderTarget is %dx%d but output is %s (%dx%d). Resize RT to match."),
+			RTRes.X, RTRes.Y, *GetResolutionDisplayName(OutputResolution), ExpectedRes.X, ExpectedRes.Y);
+		return false;
+	}
+
 	// Create capture from the output
 	MediaCapture = CreatedMediaOutput->CreateMediaCapture();
 	if (!MediaCapture)
@@ -214,17 +241,16 @@ bool URocketARMediaOutput::StartCapture()
 	// Listen for state changes (error, stopped, etc.)
 	MediaCapture->OnStateChanged.AddDynamic(this, &URocketARMediaOutput::OnCaptureStateChanged);
 
-	// Capture the active scene viewport (whatever camera is active — production camera)
 	FMediaCaptureOptions Options;
-	Options.CapturePhase = EMediaCapturePhase::EndFrame; // After alpha propagation
+	Options.CapturePhase = EMediaCapturePhase::EndFrame;       // After alpha propagation
 	Options.bSkipFrameWhenRunningExpensiveTasks = false;
-	Options.bForceAlphaToOneOnConversion = false; // Preserve alpha for key signal
-	Options.ResizeMethod = EMediaCaptureResizeMethod::ResizeSource; // Match viewport to output resolution
-	Options.bAutoRestartOnSourceSizeChange = true; // Handle viewport resizes gracefully
+	Options.bForceAlphaToOneOnConversion = false;              // Preserve alpha for key signal
+	Options.ResizeMethod = EMediaCaptureResizeMethod::ResizeSource;
+	Options.bAutoRestartOnSourceSizeChange = true;
 
-	if (!MediaCapture->CaptureActiveSceneViewport(Options))
+	if (!MediaCapture->CaptureTextureRenderTarget2D(SourceRenderTarget, Options))
 	{
-		UE_LOG(LogRocketAR, Error, TEXT("DeckLink: CaptureActiveSceneViewport failed — is a DeckLink card installed?"));
+		UE_LOG(LogRocketAR, Error, TEXT("DeckLink: CaptureTextureRenderTarget2D failed — is a DeckLink card installed?"));
 		MediaCapture->OnStateChanged.RemoveDynamic(this, &URocketARMediaOutput::OnCaptureStateChanged);
 		MediaCapture = nullptr;
 		return false;
@@ -400,4 +426,29 @@ FString URocketARMediaOutput::GetResolutionDisplayName(ERocketAROutputResolution
 	case ERocketAROutputResolution::Res_2160p5994: return TEXT("2160p59.94");
 	default: return TEXT("Unknown");
 	}
+}
+
+void URocketARMediaOutput::SetSourceRenderTarget(UTextureRenderTarget2D* RT)
+{
+	if (SourceRenderTarget == RT) return;
+
+	const bool bWasCapturing = bCaptureActive;
+	if (bWasCapturing)
+	{
+		StopCapture();
+	}
+
+	SourceRenderTarget = RT;
+	UE_LOG(LogRocketAR, Log, TEXT("DeckLink: SourceRenderTarget set to %s"),
+		RT ? *RT->GetName() : TEXT("nullptr"));
+
+	if (bWasCapturing && SourceRenderTarget)
+	{
+		StartCapture();
+	}
+}
+
+void URocketARMediaOutput::OnActiveRigChanged(UTextureRenderTarget2D* NewRT)
+{
+	SetSourceRenderTarget(NewRT);
 }
