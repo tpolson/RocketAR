@@ -2,6 +2,10 @@
 #include "RocketDefinition.h"
 #include "RocketARInputComponent.h"
 #include "RocketARMediaOutput.h"
+#include "RocketAROperatorSettings.h"
+#include "OperatorConsoleWidget.h"
+#include "Blueprint/UserWidget.h"
+#include "Kismet/GameplayStatics.h"
 #include "TelemetrySubsystem.h"
 #include "FlightEventDetector.h"
 #include "BannerManager.h"
@@ -47,6 +51,9 @@ void ARocketARSetupActor::BeginPlay()
 	Super::BeginPlay();
 
 	UE_LOG(LogRocketAR, Log, TEXT("RocketAR Setup Actor: BeginPlay"));
+
+	// Load persisted operator settings before any subsystem init so values apply.
+	LoadOperatorSettings();
 
 	// Pre-compile banner materials to avoid checkerboard flash on first spawn
 	ABannerActor::WarmUpMaterials();
@@ -119,6 +126,8 @@ void ARocketARSetupActor::BeginPlay()
 	}
 
 	SetupHUD();
+
+	SetupOperatorConsole();
 
 	if (bFreezeFrameMode)
 	{
@@ -846,4 +855,172 @@ void ARocketARSetupActor::SetTelemetryData(const FTelemetryInputData& InData)
 	InputEngineThrustPercent = InData.EngineThrustPercent;
 	InputMissionElapsedTime = InData.MissionElapsedTime;
 	bInputTelemetryValid = InData.bTelemetryValid;
+}
+
+// -------- Operator Console / Persistent Settings --------
+
+void ARocketARSetupActor::LoadOperatorSettings()
+{
+	URocketAROperatorSettings* Settings = URocketAROperatorSettings::LoadFromSlot(OperatorSettingsSlot);
+	if (!Settings) return;
+	ApplyOperatorSettings(Settings);
+}
+
+bool ARocketARSetupActor::SaveOperatorSettings()
+{
+	URocketAROperatorSettings* Settings =
+		Cast<URocketAROperatorSettings>(UGameplayStatics::CreateSaveGameObject(URocketAROperatorSettings::StaticClass()));
+	if (!Settings) return false;
+	CopyStateToOperatorSettings(Settings);
+	return Settings->SaveToSlot(OperatorSettingsSlot);
+}
+
+void ARocketARSetupActor::ApplyOperatorSettings(URocketAROperatorSettings* S)
+{
+	if (!S) return;
+
+	LaunchPadLatitude  = S->LaunchPadLatitude;
+	LaunchPadLongitude = S->LaunchPadLongitude;
+	LaunchPadAltitude  = S->LaunchPadAltitude;
+
+	CameraMountOffset   = S->CameraMountOffset;
+	CameraMountRotation = S->CameraMountRotation;
+	CameraOpticalRoll   = S->CameraOpticalRoll;
+	CameraHFOV          = S->CameraHFOV;
+	ActiveCameraRigIndex = S->ActiveCameraRigIndex;
+
+	BannerWidth          = S->BannerWidth;
+	BannerHeight         = S->BannerHeight;
+	BannerRotationYaw    = S->BannerRotationYaw;
+	MaxActiveBanners     = S->MaxActiveBanners;
+	BannerTextSize       = S->BannerTextSize;
+	TextSDFSharpness     = S->TextSDFSharpness;
+	SlideSpeed           = S->SlideSpeed;
+	SlideDuration        = S->SlideDuration;
+	BannerFadeInDuration = S->BannerFadeInDuration;
+	BannerFadeOutDuration = S->BannerFadeOutDuration;
+	BannerSpawnZOffset   = S->BannerSpawnZOffset;
+	AnticipationSeconds  = S->AnticipationSeconds;
+
+	bShowAltitudeMarkers   = S->bShowAltitudeMarkers;
+	AltitudeMarkerInterval = S->AltitudeMarkerInterval;
+	MarkerColor            = S->MarkerColor;
+
+	bShowHUDTelemetry  = S->bShowHUDTelemetry;
+	bShowHUDEvents     = S->bShowHUDEvents;
+	bShowDebugMessages = S->bShowDebugMessages;
+
+	bEnableDeckLink         = S->bEnableDeckLink;
+	DeckLinkOutputResolution = S->DeckLinkOutputResolution;
+	bDeckLinkFillAndKey     = S->bDeckLinkFillAndKey;
+	bDeckLinkAutoStart      = S->bDeckLinkAutoStart;
+	bDeckLinkGenlock        = S->bDeckLinkGenlock;
+	bDeckLinkTimecode       = S->bDeckLinkTimecode;
+
+	bUseCSVProvider = S->bUseCSVProvider;
+	CSVFilePath     = S->CSVFilePath;
+
+	UE_LOG(LogRocketAR, Log, TEXT("OperatorSettings applied to setup actor"));
+}
+
+void ARocketARSetupActor::CopyStateToOperatorSettings(URocketAROperatorSettings* S) const
+{
+	if (!S) return;
+
+	S->LaunchPadLatitude  = LaunchPadLatitude;
+	S->LaunchPadLongitude = LaunchPadLongitude;
+	S->LaunchPadAltitude  = LaunchPadAltitude;
+
+	S->CameraMountOffset   = CameraMountOffset;
+	S->CameraMountRotation = CameraMountRotation;
+	S->CameraOpticalRoll   = CameraOpticalRoll;
+	S->CameraHFOV          = CameraHFOV;
+	S->ActiveCameraRigIndex = ActiveCameraRigIndex;
+
+	S->BannerWidth          = BannerWidth;
+	S->BannerHeight         = BannerHeight;
+	S->BannerRotationYaw    = BannerRotationYaw;
+	S->MaxActiveBanners     = MaxActiveBanners;
+	S->BannerTextSize       = BannerTextSize;
+	S->TextSDFSharpness     = TextSDFSharpness;
+	S->SlideSpeed           = SlideSpeed;
+	S->SlideDuration        = SlideDuration;
+	S->BannerFadeInDuration = BannerFadeInDuration;
+	S->BannerFadeOutDuration = BannerFadeOutDuration;
+	S->BannerSpawnZOffset   = BannerSpawnZOffset;
+	S->AnticipationSeconds  = AnticipationSeconds;
+
+	S->bShowAltitudeMarkers   = bShowAltitudeMarkers;
+	S->AltitudeMarkerInterval = AltitudeMarkerInterval;
+	S->MarkerColor            = MarkerColor;
+
+	S->bShowHUDTelemetry  = bShowHUDTelemetry;
+	S->bShowHUDEvents     = bShowHUDEvents;
+	S->bShowDebugMessages = bShowDebugMessages;
+
+	S->bEnableDeckLink         = bEnableDeckLink;
+	S->DeckLinkOutputResolution = DeckLinkOutputResolution;
+	S->bDeckLinkFillAndKey     = bDeckLinkFillAndKey;
+	S->bDeckLinkAutoStart      = bDeckLinkAutoStart;
+	S->bDeckLinkGenlock        = bDeckLinkGenlock;
+	S->bDeckLinkTimecode       = bDeckLinkTimecode;
+
+	S->bUseCSVProvider = bUseCSVProvider;
+	S->CSVFilePath     = CSVFilePath;
+}
+
+void ARocketARSetupActor::SetupOperatorConsole()
+{
+	if (!OperatorConsoleClass) return;
+
+	UWorld* World = GetWorld();
+	if (!World) return;
+	APlayerController* PC = World->GetFirstPlayerController();
+	if (!PC) return;
+
+	OperatorConsole = CreateWidget<UOperatorConsoleWidget>(PC, OperatorConsoleClass);
+	if (!OperatorConsole)
+	{
+		UE_LOG(LogRocketAR, Warning, TEXT("OperatorConsole: failed to create widget from %s"),
+			*OperatorConsoleClass->GetName());
+		return;
+	}
+
+	OperatorConsole->SetSetupActor(this);
+	OperatorConsole->AddToViewport(50); // Z-order above HUD canvas
+	OperatorConsole->SetVisibility(ESlateVisibility::Collapsed);
+	bOperatorConsoleVisible = false;
+
+	UE_LOG(LogRocketAR, Log, TEXT("OperatorConsole spawned (press F12 to toggle)"));
+}
+
+void ARocketARSetupActor::ToggleOperatorConsole()
+{
+	if (!OperatorConsole) return;
+
+	bOperatorConsoleVisible = !bOperatorConsoleVisible;
+	OperatorConsole->SetVisibility(bOperatorConsoleVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+
+	if (bOperatorConsoleVisible)
+	{
+		OperatorConsole->RefreshFromSetupActor();
+	}
+
+	if (APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr)
+	{
+		PC->bShowMouseCursor = bOperatorConsoleVisible;
+		if (bOperatorConsoleVisible)
+		{
+			FInputModeGameAndUI Mode;
+			Mode.SetWidgetToFocus(OperatorConsole->TakeWidget());
+			Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+			PC->SetInputMode(Mode);
+		}
+		else
+		{
+			PC->SetInputMode(FInputModeGameAndUI().SetHideCursorDuringCapture(false));
+		}
+	}
+
+	UE_LOG(LogRocketAR, Log, TEXT("OperatorConsole: %s"), bOperatorConsoleVisible ? TEXT("SHOWN") : TEXT("HIDDEN"));
 }

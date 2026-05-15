@@ -22,6 +22,8 @@ class URocketARInputComponent;
 class URocketARMediaOutput;
 class UTexture2D;
 class URocketDefinition;
+class URocketAROperatorSettings;
+class UOperatorConsoleWidget;
 
 /**
  * Master setup actor that wires all RocketAR systems together.
@@ -366,6 +368,34 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "RocketAR")
 	URocketARMediaOutput* GetMediaOutput() const { return MediaOutputComponent; }
 
+	UFUNCTION(BlueprintCallable, Category = "RocketAR")
+	UOperatorConsoleWidget* GetOperatorConsole() const { return OperatorConsole; }
+
+	// --- Operator Console / Persistent Settings ---
+
+	/**
+	 * Blueprint class (WBP_OperatorConsole inheriting UOperatorConsoleWidget) spawned
+	 * on BeginPlay and toggled with F12. Null = no console.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Operator Console")
+	TSubclassOf<UOperatorConsoleWidget> OperatorConsoleClass;
+
+	/** Save slot for operator settings. Use named slots for per-mission presets. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Operator Console")
+	FString OperatorSettingsSlot = TEXT("RocketAR_Operator");
+
+	/** Load operator settings from disk and apply to this actor (called pre-init in BeginPlay). */
+	UFUNCTION(BlueprintCallable, Category = "Operator Console")
+	void LoadOperatorSettings();
+
+	/** Copy current setup-actor state into a USaveGame and persist it. */
+	UFUNCTION(BlueprintCallable, Category = "Operator Console")
+	bool SaveOperatorSettings();
+
+	/** Show/hide the operator console (also flips mouse cursor + input mode). */
+	UFUNCTION(BlueprintCallable, Category = "Operator Console")
+	void ToggleOperatorConsole();
+
 private:
 	void SetupGeoreference();
 	void SetupCamera();
@@ -431,4 +461,13 @@ private:
 
 	UPROPERTY()
 	URocketARMediaOutput* MediaOutputComponent = nullptr;
+
+	UPROPERTY()
+	UOperatorConsoleWidget* OperatorConsole = nullptr;
+
+	bool bOperatorConsoleVisible = false;
+
+	void SetupOperatorConsole();
+	void ApplyOperatorSettings(URocketAROperatorSettings* Settings);
+	void CopyStateToOperatorSettings(URocketAROperatorSettings* Settings) const;
 };

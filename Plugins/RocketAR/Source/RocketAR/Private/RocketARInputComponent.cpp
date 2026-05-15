@@ -70,10 +70,11 @@ void URocketARInputComponent::SetupBindings(ARocketARSetupActor* InSetupActor)
 	InputComp->BindKey(EKeys::F2, IE_Pressed, this, &URocketARInputComponent::OnToggleStats);
 	InputComp->BindKey(EKeys::Tab, IE_Pressed, this, &URocketARInputComponent::OnCycleBanner);
 	InputComp->BindKey(EKeys::F4, IE_Pressed, this, &URocketARInputComponent::OnToggleDeckLink);
+	InputComp->BindKey(EKeys::F12, IE_Pressed, this, &URocketARInputComponent::OnToggleConsole);
 
 	bBindingsReady = true;
 	PrimaryComponentTick.SetTickFunctionEnable(false);
-	UE_LOG(LogRocketAR, Log, TEXT("Input bindings set up (Space, Arrows, [], R, D, F1, F2, F4, Tab)"));
+	UE_LOG(LogRocketAR, Log, TEXT("Input bindings set up (Space, Arrows, [], R, D, F1, F2, F4, F12, Tab)"));
 }
 
 void URocketARInputComponent::OnTogglePlayPause()
@@ -193,6 +194,12 @@ void URocketARInputComponent::OnCycleBanner()
 	CurrentBannerIndex = (CurrentBannerIndex + 1) % Banners->GetActiveBannerCount();
 	UE_LOG(LogRocketAR, Log, TEXT("Input: Cycle to banner %d/%d"),
 		CurrentBannerIndex + 1, Banners->GetActiveBannerCount());
+}
+
+void URocketARInputComponent::OnToggleConsole()
+{
+	if (!SetupActor) return;
+	SetupActor->ToggleOperatorConsole();
 }
 
 void URocketARInputComponent::OnToggleDeckLink()

@@ -9,7 +9,8 @@ class ACSVTelemetryProvider;
 
 /**
  * Keyboard input bindings for RocketAR operator controls.
- * Space=pause, arrows=scrub, []=timescale, R=reset, D=dev toggle, F1=HUD, F2=stats, F4=DeckLink, Tab=banner cycle.
+ * Space=pause, arrows=scrub, []=timescale, R=reset, D=dev toggle,
+ * F1=HUD, F2=stats, F4=DeckLink, F12=operator console, Tab=banner cycle.
  */
 UCLASS(BlueprintType, meta=(BlueprintSpawnableComponent))
 class ROCKETAR_API URocketARInputComponent : public UActorComponent
@@ -58,6 +59,9 @@ private:
 
 	UFUNCTION()
 	void OnToggleDeckLink();
+
+	UFUNCTION()
+	void OnToggleConsole();
 
 	UPROPERTY()
 	ARocketARSetupActor* SetupActor = nullptr;
