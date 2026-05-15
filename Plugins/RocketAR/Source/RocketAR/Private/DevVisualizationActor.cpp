@@ -1,4 +1,5 @@
 #include "DevVisualizationActor.h"
+#include "RocketDefinition.h"
 #include "RocketARModule.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
@@ -158,7 +159,7 @@ void ADevVisualizationActor::UpdateRocketDimensions()
 
 void ADevVisualizationActor::UpdateFromTelemetry(const FProcessedTelemetryData& Data)
 {
-	if (!bIsVisible) return;
+	if (!bIsVisible && !bProductionVisible) return;
 
 	// Use telemetry quaternion for full 3-axis orientation (proper roll, no flip)
 	if (Data.RawData.bTelemetryValid)
@@ -201,9 +202,88 @@ void ADevVisualizationActor::SetEarthTransform(const FVector& CenterUE, const FV
 void ADevVisualizationActor::SetVisible(bool bVisible)
 {
 	bIsVisible = bVisible;
-	SetActorHiddenInGame(!bVisible);
+	// Earth is always dev-only — never in production output
 	if (EarthMesh) EarthMesh->SetVisibility(bVisible);
-	if (RocketMesh) RocketMesh->SetVisibility(bVisible);
+	// Rocket stays visible if production visibility is enabled (for CG fill-in)
+	if (RocketMesh) RocketMesh->SetVisibility(bVisible || bProductionVisible);
+	// Only fully hide the actor if neither dev nor production needs it visible
+	SetActorHiddenInGame(!bVisible && !bProductionVisible);
 
 	UE_LOG(LogRocketAR, Log, TEXT("DevVisualization: %s"), bVisible ? TEXT("Visible") : TEXT("Hidden"));
+}
+
+void ADevVisualizationActor::ApplyRocketDefinition(URocketDefinition* Definition)
+{
+	ActiveDefinition = Definition;
+
+	if (!Definition)
+	{
+		// Null definition → restore cylinder using existing RocketHeight/RocketRadius
+		static const FSoftObjectPath CylinderPath(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+		if (UStaticMesh* CylinderMesh = Cast<UStaticMesh>(CylinderPath.TryLoad()))
+		{
+			RocketMesh->SetStaticMesh(CylinderMesh);
+		}
+		LoadedRocketMesh = nullptr;
+		UpdateRocketDimensions();
+		SetProductionVisible(false);
+		return;
+	}
+
+	RocketHeight = Definition->Height;
+	RocketRadius = Definition->Radius;
+
+	// Resolve soft pointer synchronously at BeginPlay time
+	UStaticMesh* ResolvedMesh = Definition->RocketMesh.IsValid()
+		? Definition->RocketMesh.Get()
+		: Definition->RocketMesh.LoadSynchronous();
+	LoadedRocketMesh = ResolvedMesh;
+
+	if (ResolvedMesh)
+	{
+		// Real mesh: set directly, reset scale so the asset's own import scale is used
+		RocketMesh->SetStaticMesh(ResolvedMesh);
+		RocketMesh->SetWorldScale3D(FVector(1.0f));
+		RocketMesh->SetRelativeLocation(FVector::ZeroVector);
+		UE_LOG(LogRocketAR, Log, TEXT("DevVisualization: loaded mesh '%s' for rocket '%s'"),
+			*ResolvedMesh->GetName(), *Definition->RocketName.ToString());
+	}
+	else
+	{
+		// No mesh → cylinder fallback with definition's real dimensions
+		static const FSoftObjectPath CylinderPath(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+		if (UStaticMesh* CylinderMesh = Cast<UStaticMesh>(CylinderPath.TryLoad()))
+		{
+			RocketMesh->SetStaticMesh(CylinderMesh);
+		}
+		UpdateRocketDimensions();
+		UE_LOG(LogRocketAR, Log, TEXT("DevVisualization: no mesh for '%s', using cylinder fallback (H=%.1fm R=%.1fm)"),
+			*Definition->RocketName.ToString(), RocketHeight, RocketRadius);
+	}
+
+	SetProductionVisible(Definition->bRocketVisibleInProduction);
+}
+
+void ADevVisualizationActor::SetProductionVisible(bool bVisible)
+{
+	bProductionVisible = bVisible;
+	if (!RocketMesh) return;
+
+	// Switch material for all slots: opaque writes fill+key; additive is viewport-only
+	UMaterial* Mat = bVisible ? GetDevOpaqueMaterial() : GetDevAdditiveMaterial();
+	const int32 NumSlots = FMath::Max(RocketMesh->GetNumMaterials(), 1);
+	for (int32 i = 0; i < NumSlots; ++i)
+	{
+		UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(Mat, this);
+		MID->SetVectorParameterValue(TEXT("Color"), FLinearColor(1.0f, 0.3f, 0.1f, 1.0f));
+		RocketMesh->SetMaterial(i, MID);
+		if (i == 0) RocketMaterial = MID; // keep in sync for single-slot cylinder case
+	}
+
+	// Rocket must be visible in-world if it's writing to production output
+	if (RocketMesh) RocketMesh->SetVisibility(bIsVisible || bVisible);
+	if (bVisible && !bIsVisible)
+	{
+		SetActorHiddenInGame(false);
+	}
 }

@@ -21,6 +21,7 @@ class ARocketARHUD;
 class URocketARInputComponent;
 class URocketARMediaOutput;
 class UTexture2D;
+class URocketDefinition;
 
 /**
  * Master setup actor that wires all RocketAR systems together.
@@ -84,6 +85,26 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Launch Site")
 	double LaunchPadAltitude = 150.0;
+
+	// --- Rocket Library ---
+
+	/**
+	 * Active rocket definition. Null = legacy behavior (cylinder + single camera, no regression).
+	 * Set to a URocketDefinition data asset to enable the rocket library system.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rocket Library")
+	URocketDefinition* ActiveRocket = nullptr;
+
+	/**
+	 * Index of the active camera rig within the rocket definition's CameraRigs array.
+	 * All rigs spawn simultaneously; this selects which one feeds the SDI output.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rocket Library", meta = (ClampMin = "0"))
+	int32 ActiveCameraRigIndex = 0;
+
+	/** Switch the active output camera rig at runtime */
+	UFUNCTION(BlueprintCallable, Category = "Rocket Library")
+	void SetActiveCameraRig(int32 RigIndex);
 
 	// --- Camera Configuration ---
 
